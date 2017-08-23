@@ -26,5 +26,8 @@ class Project(object):
             self._prg = cfg_to_program(self.cfg)
         return self._prg
 
+    def filter_ins(self, names):
+        return self.cfg.filter_ins(names)
+
     def run_symbolic(self, path):
         return run_symbolic(self.prg, path, self.code)

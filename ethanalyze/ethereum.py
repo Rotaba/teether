@@ -112,6 +112,11 @@ class CFG(object):
         if fix_xrefs:
             self._xrefs()
 
+    def filter_ins(self, names):
+        if isinstance(names, basestring):
+            names = [names]
+        return [ins for bb in self.bbs for ins in bb.ins if ins.name in names]
+
     def _xrefs(self):
         self._easy_xrefs()
         self._hard_xrefs()
@@ -215,12 +220,6 @@ def disass(code, i=0):
         # End basic block on STOP, JUMP, JUMPI, RETURN, REVERT, RAISE, or if the following instruction is a JUMPDEST
         if op in (0x00, 0x56, 0x57, 0xf3, 0xfd, 0xfe) or (i < len(code) and ord(code[i]) == 0x5b):
             break
-
-
-def filter_ins(cfg, names):
-    if isinstance(names, basestring):
-        names = [names]
-    return [ins for bb in cfg.bbs for ins in bb.ins if ins.name in names]
 
 
 def generate_BBs(code):
@@ -496,7 +495,7 @@ def extract_contract_code(code, fname=''):
                 '-' + fname if fname else fname, str(datetime.now()).replace(' ', '-').replace(':', '')),
               'w') as outfile:
         outfile.write(to_dot(icfg))
-    returns = filter_ins(icfg, 'RETURN')
+    returns = icfg.filter_ins('RETURN')
     memory_infos = resolve_all_memory(icfg, code)
     for r in returns:
         if not r in memory_infos:
@@ -853,7 +852,6 @@ def run(program, state=None, check_initialized=False):
             mstart, msz = stk.pop(), stk.pop()
             topics = [stk.pop() for x in range(depth)]
             mem.extend(mstart, msz)
-            data = bytearray_to_bytestr(mem[mstart: mstart + msz])
             # Ignore external effects...
         # Create a new contract
         elif op == 'CREATE':
@@ -1013,7 +1011,7 @@ def run_symbolic(program, path, code=None, state=None, ctx=None):
                     stk.append(z3.If(s1 == 0, z3.BitVecVal(0, 256), z3.SRem(s0, s1)))
             elif op == 'ADDMOD':
                 s0, s1, s2 = stk.pop(), stk.pop(), stk.pop()
-                if isinstance(s2, numers.Number):
+                if concrete(s2):
                     stk.append((s0 + s1) % s2 if s2 else 0)
                 else:
                     stk.append(z3.If(s2 == 0, z3.BitVecVal(0, 256), z3.URem((s0 + s1), s2)))
@@ -1537,7 +1535,7 @@ def check_and_model(constraints, sha_constraints):
 
 def trivial_call_exploit(code, target_addr, target_amount, amount_check='='):
     cfg = CFG(generate_BBs(code))
-    call_ins = filter_ins(cfg, 'CALL')
+    call_ins = cfg.filter_ins('CALL')
     if not call_ins:
         logging.info('No CALL instructions')
         return
@@ -1607,7 +1605,7 @@ def dependency_summary(constraints, sha_constraints, detailed=False):
 
 def call_constraints(code):
     cfg = CFG(generate_BBs(code))
-    call_ins = filter_ins(cfg, 'CALL')
+    call_ins = cfg.filter_ins('CALL')
     if not call_ins:
         logging.info('No CALL instructions')
         return
@@ -1652,7 +1650,7 @@ def call_constraints(code):
 
 def store_constraints(code):
     cfg = CFG(generate_BBs(code))
-    store_ins = filter_ins(cfg, 'SSTORE')
+    store_ins = cfg.filter_ins('SSTORE')
     if not store_ins:
         logging.info('No STORE instructions')
         return
