@@ -2,7 +2,7 @@
 import sys
 import logging
 from binascii import unhexlify, hexlify
-import ethereum
+import ethanalyze
 
 logging.basicConfig(level=logging.DEBUG)
 
@@ -13,11 +13,11 @@ if __name__=='__main__':
     with open(sys.argv[1]) as infile:
         inbuffer = infile.read().rstrip()
     code = unhexlify(inbuffer)
-    for call, path, target, amount, state, constraints, sha_constraints in ethereum.call_constraints(code):
+    for call, path, target, amount, state, constraints, sha_constraints in ethanalyze.call_constraints(code):
         print '='*32
         print 'Call: %s'%call
         print 'Path taken: %s'%(' -> '.join('%x'%addr for addr in path))
-        print 'Summary: %s'%(', '.join(map(str, ethereum.dependency_summary(constraints + [target] + [amount], sha_constraints))))
+        print 'Summary: %s'%(', '.join(map(str, ethanalyze.dependency_summary(constraints + [target] + [amount], sha_constraints))))
         print '-'*32
         print 'Target: %s'%(' '.join(str(target).split()))
         print 'Amount: %s'%(' '.join(str(amount).split()))
