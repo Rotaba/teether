@@ -1,9 +1,11 @@
+import copy
 import numbers
 from binascii import hexlify
 
 from z3 import z3, is_false, is_true
 
 import utils
+from ethanalyze.z3util import add_suffix
 from .memory import UninitializedRead
 
 
@@ -106,6 +108,11 @@ class SymbolicMemory(object):
     def extend(self, start, size):
         pass
 
+    def translate(self, level):
+        new_memory = copy.copy(self)
+        new_memory.memory = add_suffix(self.memory, level)
+        return new_memory
+
 
 class SymbolicStorage(object):
     def __init__(self):
@@ -118,6 +125,12 @@ class SymbolicStorage(object):
     def __setitem__(self, index, v):
         self.storage = z3.Store(self.storage, index, v)
         self.history.append(self.storage)
+
+    def translate(self, level):
+        new_storage = copy.copy(self)
+        new_storage.storage = add_suffix(self.storage, level)
+        new_storage.history = [add_suffix(h, level) for h in self.history]
+        return new_storage
 
 
 class AbstractEVMState(object):
@@ -140,7 +153,13 @@ class SymbolicEVMState(AbstractEVMState):
         super(SymbolicEVMState, self).__init__(code)
         self.memory = SymbolicMemory()
         self.storage = SymbolicStorage()
-        self.initial_storage = self.storage
+
+    def translate(self, level):
+        new_state = copy.copy(self)
+        new_state.memory = self.memory.translate(level)
+        new_state.storage = self.storage.translate(level)
+        new_state.stack = [s if concrete(s) else add_suffix(s, level) for s in self.stack]
+        return new_state
 
 
 def run(program, state=None, code=None, check_initialized=False):
@@ -236,8 +255,8 @@ def run(program, state=None, code=None, check_initialized=False):
             if op == 'SHA3':
                 s0, s1 = stk.pop(), stk.pop()
                 mem.extend(s0, s1)
-                data = bytearray_to_bytestr(mem[s0: s0 + s1])
-                stk.append(big_endian_to_int(sha3(data)))
+                data = utils.bytearray_to_bytestr(mem[s0: s0 + s1])
+                stk.append(utils.big_endian_to_int(utils.sha3(data)))
             elif op == 'ADDRESS':
                 raise ExternalData('ADDRESS')
             elif op == 'BALANCE':
@@ -826,3 +845,56 @@ class SymbolicResult(object):
     def simplify(self):
         self.constraints = [z3.simplify(c) for c in self.constraints]
         self.sha_constraints = {sha: z3.simplify(sha_value) for sha, sha_value in self.sha_constraints.items()}
+
+    def translate(self, level):
+        new_state = self.state.translate(level)
+        new_constraints = [add_suffix(c, level) for c in self.constraints]
+        new_sha_constraints = {add_suffix(sha, level): add_suffix(sha_value, level) for sha, sha_value in
+                               self.sha_constraints.items()}
+        return SymbolicResult(new_state, new_constraints, new_sha_constraints)
+
+
+class CombinedSymbolicResult(object):
+    def __init__(self):
+        self.results = []
+        self._constraints = None
+        self._sha_constraints = None
+        self._states = None
+
+    def _reset(self):
+        self._constraints = None
+        self._sha_constraints = None
+        self._states = None
+
+    def _combine(self):
+        translated_results = [result.translate(i) for i, result in enumerate(self.results)]
+        self._states = [tr.state for tr in translated_results]
+        # Adapt storages
+        storage_substitutions = [(b.storage.history[0], a.storage.history[-1]) for a, b in
+                                 zip(self._states[:-1], self._states[1:])]
+        self._constraints = [z3.substitue(c, storage_substitutions) for tr in translated_results for c in
+                             tr.constraints]
+        self._sha_constraints = {
+            z3.substitute(sha, storage_substitutions): z3.substitute(sha_value, storage_substitutions) for tr in
+            translated_results for sha, sha_value in tr.sha_constraints.items()}
+
+    def prepend(self, result):
+        self.results = [result] + self.results
+
+    @property
+    def constraints(self):
+        if not self._constraints:
+            self._combine()
+        return self._constraints
+
+    @property
+    def sha_constraints(self):
+        if not self._sha_constraints:
+            self._combine()
+        return self._sha_constraints
+
+    @property
+    def states(self):
+        if not self._states:
+            self._combine()
+        return self._states

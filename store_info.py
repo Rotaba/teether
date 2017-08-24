@@ -36,7 +36,7 @@ if __name__ == '__main__':
     if len(sys.argv) < 2:
         print 'Usage: %s <code>' % sys.argv[0]
         exit(-1)
-    detailed = len(sys.argv) < 3 or '--short' in sys.argv
+    detailed = len(sys.argv) < 3 or '--short' not in sys.argv
     for store, path, address, value, r in store_constraints(sys.argv[-1]):
         print '=' * 32
         print 'Call: %s' % store
