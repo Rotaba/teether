@@ -4,7 +4,7 @@ from binascii import hexlify
 from z3 import z3, is_false, is_true
 
 from .memory import UninitializedRead
-from .utils import to_signed, bytearray_to_bytestr, sha3
+import utils
 
 
 class ExternalData(Exception):

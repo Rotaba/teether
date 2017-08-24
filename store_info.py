@@ -1,14 +1,13 @@
 #!/usr/bin/env python2.7
-import sys
 import logging
-from binascii import unhexlify, hexlify
+import sys
+from binascii import unhexlify
 
 import z3
-
-from ethanalyze.project import Project
-from ethanalyze.slicing import backward_slice
 from ethanalyze.constraints import dependency_summary
 from ethanalyze.evm import concrete, IntractablePath
+from ethanalyze.project import Project
+from ethanalyze.slicing import backward_slice
 
 logging.basicConfig(level=logging.DEBUG)
 

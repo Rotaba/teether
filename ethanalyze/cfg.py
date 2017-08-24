@@ -4,16 +4,14 @@ from collections import defaultdict, deque
 
 from .opcodes import opcodes
 from .memory import UninitializedRead
-from .slicing import slice_to_program, backward_slice
-from .evm import ExternalData, run
 
 
 class Instruction(object):
     def __init__(self, addr, op, arg=None):
         opinfo = opcodes[op]
-        len = (op - 0x5f) + 1 if 0x60 <= op <= 0x7f else 1
+        inslen = (op - 0x5f) + 1 if 0x60 <= op <= 0x7f else 1
         self.addr = addr
-        self.next_addr = self.addr + len
+        self.next_addr = self.addr + inslen
         self.op = op
         self.name = opinfo[0]
         self.arg = arg
@@ -50,6 +48,8 @@ class BB(object):
             return None
 
     def get_succ_addrs_full(self):
+        from .slicing import slice_to_program, backward_slice
+        from .evm import ExternalData, run
         new_succ_addrs = set()
         if not self.jump_resolved:
             bs = backward_slice(self.ins[-1], [0])
@@ -67,11 +67,11 @@ class BB(object):
                             self.succ_addrs.add(succ_addr)
                             new_succ_addrs.add(succ_addr)
                     except ExternalData as e:
-                        # logging.exception('WARNING, COULD NOT EXECUTE SLICE', repr(e))
                         pass
+                        # logging.exception('WARNING, COULD NOT EXECUTE SLICE', repr(e))
                     except UninitializedRead as e:
-                        # logging.exception('WARNING, COULD NOT EXECUTE SLICE', repr(e))
                         pass
+                        # logging.exception('WARNING, COULD NOT EXECUTE SLICE', repr(e))
         return (self.succ_addrs, new_succ_addrs)
 
     def get_succ_addrs(self):

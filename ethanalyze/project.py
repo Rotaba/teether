@@ -33,7 +33,7 @@ class Project(object):
         return self.cfg.filter_ins(names)
 
     def run(self, program):
-        return run(program, self.code)
+        return run(program, code=self.code)
 
     def run_symbolic(self, path):
         return run_symbolic(self.prg, path, self.code)

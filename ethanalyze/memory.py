@@ -1,11 +1,6 @@
 from collections import deque
 
 from .opcodes import memory_reads, memory_writes
-from .slicing import backward_slice, slice_to_program
-from .evm import run, EVMState, ExternalData
-from .intrange import Range
-
-
 
 class InconsistentRange(Exception):
     pass
@@ -35,6 +30,9 @@ class MemoryInfo(object):
 
 
 def get_memory_info(ins, code, memory_infos=None):
+    from .slicing import backward_slice, slice_to_program
+    from .evm import run, EVMState, ExternalData
+    from .intrange import Range
     targets = []
 
     read = False
@@ -89,7 +87,6 @@ def get_memory_info(ins, code, memory_infos=None):
 
 
 def resolve_all_memory(cfg, code):
-    # logging.info(to_dot(cfg))
     memory_infos = dict()
     resolve_later = deque(
         ins for bb in cfg.bbs for ins in bb.ins if ins.name in memory_reads or ins.name in memory_writes)

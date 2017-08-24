@@ -1,22 +1,30 @@
 #!/usr/bin/env python2.7
-import sys
-from datetime import datetime
 import logging
-
+import sys
 from binascii import unhexlify, hexlify
-from ethanalyze.project import Project
-from ethanalyze.cfg import CFG, backward_slice, run, slice_to_program
-from ethanalyze.memory import resolve_all_memory
+from datetime import datetime
+
+import os
+
+from ethanalyze.cfg import CFG
+from ethanalyze.slicing import backward_slice, slice_to_program
 from ethanalyze.disassemble import generate_BBs_recursive
+from ethanalyze.memory import resolve_all_memory
+from ethanalyze.project import Project
 
 logging.basicConfig(level=logging.DEBUG)
+
 
 def extract_contract_code(code, fname=''):
     icfg = CFG(generate_BBs_recursive(code), fix_xrefs=True)
     p = Project(code, cfg=icfg)
-    with open('./cfg%s-%s.dot' % (
-                '-' + fname if fname else fname, str(datetime.now()).replace(' ', '-').replace(':', '')),
-              'w') as outfile:
+    path = '.'
+    if fname:
+        path, fname = os.path.split(fname)
+        fname = '-' + fname
+    now = str(datetime.now()).replace(' ', '-').replace(':', '')
+    fname = 'cfg%s-%s.dot' % (fname, now)
+    with open(os.path.join(path, fname), 'w') as outfile:
         outfile.write(icfg.to_dot())
     returns = icfg.filter_ins('RETURN')
     memory_infos = resolve_all_memory(icfg, code)
@@ -33,18 +41,19 @@ def extract_contract_code(code, fname=''):
                 state = p.run(slice_to_program(b))
                 return str(state.memory[start:stop])
             except:
+                logging.exception('Exception while running')
                 pass
     return None
 
 
-if __name__=='__main__':
+if __name__ == '__main__':
     if len(sys.argv) < 2:
-        print 'Usage: %s <codefile>'%sys.argv[0]
+        print 'Usage: %s <codefile>' % sys.argv[0]
         exit(-1)
     with open(sys.argv[1]) as infile:
         inbuffer = infile.read().rstrip()
     code = unhexlify(inbuffer)
-    if not '\x39' in code:
+    if '\x39' not in code:
         logging.warning('No CODECOPY in this contract!!')
     contract = extract_contract_code(code, sys.argv[1])
     if contract:

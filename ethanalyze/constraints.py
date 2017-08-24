@@ -4,7 +4,7 @@ from collections import defaultdict
 
 from z3 import z3, z3util
 
-from . import utils
+import utils
 from .evm import IntractablePath
 from .z3util import get_vars, to_bytes
 
