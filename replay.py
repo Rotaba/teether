@@ -1,8 +1,9 @@
 #!/usr/bin/env python2.7
-import json
 import curses
+import json
 import sys
 from binascii import unhexlify
+
 
 def main():
     with open(sys.argv[1]) as infile:

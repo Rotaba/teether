@@ -2,8 +2,8 @@ import logging
 from binascii import hexlify
 from collections import defaultdict, deque
 
-from .opcodes import opcodes
 from .memory import UninitializedRead
+from .opcodes import opcodes
 
 
 class Instruction(object):

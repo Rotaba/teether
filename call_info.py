@@ -3,6 +3,7 @@ import logging
 import sys
 
 import z3
+
 from ethanalyze.constraints import dependency_summary
 from ethanalyze.evm import concrete
 from ethanalyze.project import Project

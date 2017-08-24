@@ -1,8 +1,8 @@
 import logging
 from collections import deque
 
-from .opcodes import opcodes
 from .cfg import Instruction, BB
+from .opcodes import opcodes
 
 
 class ArgumentTooShort(Exception):

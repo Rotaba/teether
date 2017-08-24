@@ -3,8 +3,8 @@ from binascii import hexlify
 
 from z3 import z3, is_false, is_true
 
-from .memory import UninitializedRead
 import utils
+from .memory import UninitializedRead
 
 
 class ExternalData(Exception):

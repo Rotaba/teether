@@ -1,16 +1,15 @@
 #!/usr/bin/env python2.7
 import logging
+import os
 import sys
 from binascii import unhexlify, hexlify
 from datetime import datetime
 
-import os
-
 from ethanalyze.cfg import CFG
-from ethanalyze.slicing import backward_slice, slice_to_program
 from ethanalyze.disassembly import generate_BBs_recursive
 from ethanalyze.memory import resolve_all_memory
 from ethanalyze.project import Project
+from ethanalyze.slicing import backward_slice, slice_to_program
 
 logging.basicConfig(level=logging.DEBUG)
 

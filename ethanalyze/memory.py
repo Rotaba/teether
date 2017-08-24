@@ -2,6 +2,7 @@ from collections import deque
 
 from .opcodes import memory_reads, memory_writes
 
+
 class InconsistentRange(Exception):
     pass
 

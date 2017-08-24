@@ -1,10 +1,10 @@
-from binascii import unhexlify
 import logging
+from binascii import unhexlify
 
-from .opcodes import potentially_user_controlled
-from .disassembly import generate_BBs
 from .cfg import CFG
+from .disassembly import generate_BBs
 from .evm import run, run_symbolic, IntractablePath
+from .opcodes import potentially_user_controlled
 from .slicing import backward_slice
 
 
