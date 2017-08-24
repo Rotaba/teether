@@ -25,7 +25,7 @@ opcodes = {
     0x1a: ['BYTE', 2, 1, 3],
     0x20: ['SHA3', 2, 1, 30],
     0x30: ['ADDRESS', 0, 1, 2],
-    0x31: ['BALANCE', 1, 1, 20], # now 400
+    0x31: ['BALANCE', 1, 1, 20],  # now 400
     0x32: ['ORIGIN', 0, 1, 2],
     0x33: ['CALLER', 0, 1, 2],
     0x34: ['CALLVALUE', 0, 1, 2],
@@ -35,8 +35,8 @@ opcodes = {
     0x38: ['CODESIZE', 0, 1, 2],
     0x39: ['CODECOPY', 3, 0, 3],
     0x3a: ['GASPRICE', 0, 1, 2],
-    0x3b: ['EXTCODESIZE', 1, 1, 20], # now 700
-    0x3c: ['EXTCODECOPY', 4, 0, 20], # now 700
+    0x3b: ['EXTCODESIZE', 1, 1, 20],  # now 700
+    0x3c: ['EXTCODECOPY', 4, 0, 20],  # now 700
     0x40: ['BLOCKHASH', 1, 1, 20],
     0x41: ['COINBASE', 0, 1, 2],
     0x42: ['TIMESTAMP', 0, 1, 2],
@@ -47,8 +47,8 @@ opcodes = {
     0x51: ['MLOAD', 1, 1, 3],
     0x52: ['MSTORE', 2, 0, 3],
     0x53: ['MSTORE8', 2, 0, 3],
-    0x54: ['SLOAD', 1, 1, 50], # 200 now
-    0x55: ['SSTORE', 2, 0, 0], # actual cost 5000-20000 depending on circumstance
+    0x54: ['SLOAD', 1, 1, 50],  # 200 now
+    0x55: ['SSTORE', 2, 0, 0],  # actual cost 5000-20000 depending on circumstance
     0x56: ['JUMP', 1, 0, 8],
     0x57: ['JUMPI', 2, 0, 10],
     0x58: ['PC', 0, 1, 2],
@@ -60,18 +60,18 @@ opcodes = {
     0xa2: ['LOG2', 4, 0, 1125],
     0xa3: ['LOG3', 5, 0, 1500],
     0xa4: ['LOG4', 6, 0, 1875],
-    0xe1: ['SLOADBYTES', 3, 0, 50], # to be discontinued
-    0xe2: ['SSTOREBYTES', 3, 0, 0], # to be discontinued
-    0xe3: ['SSIZE', 1, 1, 50], # to be discontinued
+    0xe1: ['SLOADBYTES', 3, 0, 50],  # to be discontinued
+    0xe2: ['SSTOREBYTES', 3, 0, 0],  # to be discontinued
+    0xe3: ['SSIZE', 1, 1, 50],  # to be discontinued
     0xf0: ['CREATE', 3, 1, 32000],
-    0xf1: ['CALL', 7, 1, 40], # 700 now
-    0xf2: ['CALLCODE', 7, 1, 40], # 700 now
+    0xf1: ['CALL', 7, 1, 40],  # 700 now
+    0xf2: ['CALLCODE', 7, 1, 40],  # 700 now
     0xf3: ['RETURN', 2, 0, 0],
-    0xf4: ['DELEGATECALL', 6, 1, 40], # 700 now
+    0xf4: ['DELEGATECALL', 6, 1, 40],  # 700 now
     0xf5: ['CALLBLACKBOX', 7, 1, 40],
     0xfa: ['STATICCALL', 6, 1, 40],
     0xfd: ['REVERT', 2, 0, 0],
-    0xff: ['SUICIDE', 1, 0, 0], # 5000 now
+    0xff: ['SUICIDE', 1, 0, 0],  # 5000 now
 }
 
 for i in range(1, 33):
@@ -90,23 +90,23 @@ for o in opcodes:
 GDEFAULT = 1
 GMEMORY = 3
 GQUADRATICMEMDENOM = 512  # 1 gas per 512 quadwords
-GEXPONENTBYTE = 10    # cost of EXP exponent per byte
-GCOPY = 3             # cost to copy one 32 byte word
-GCONTRACTBYTE = 200   # one byte of code in contract creation
-GCALLVALUETRANSFER = 9000   # non-zero-valued call
-GLOGBYTE = 8          # cost of a byte of logdata
+GEXPONENTBYTE = 10  # cost of EXP exponent per byte
+GCOPY = 3  # cost to copy one 32 byte word
+GCONTRACTBYTE = 200  # one byte of code in contract creation
+GCALLVALUETRANSFER = 9000  # non-zero-valued call
+GLOGBYTE = 8  # cost of a byte of logdata
 
-GTXCOST = 21000       # TX BASE GAS COST
-GTXDATAZERO = 4       # TX DATA ZERO BYTE GAS COST
-GTXDATANONZERO = 68   # TX DATA NON ZERO BYTE GAS COST
-GSHA3WORD = 6         # Cost of SHA3 per word
-GSHA256BASE = 60      # Base c of SHA256
-GSHA256WORD = 12      # Cost of SHA256 per word
+GTXCOST = 21000  # TX BASE GAS COST
+GTXDATAZERO = 4  # TX DATA ZERO BYTE GAS COST
+GTXDATANONZERO = 68  # TX DATA NON ZERO BYTE GAS COST
+GSHA3WORD = 6  # Cost of SHA3 per word
+GSHA256BASE = 60  # Base c of SHA256
+GSHA256WORD = 12  # Cost of SHA256 per word
 GRIPEMD160BASE = 600  # Base cost of RIPEMD160
 GRIPEMD160WORD = 120  # Cost of RIPEMD160 per word
-GIDENTITYBASE = 15    # Base cost of indentity
-GIDENTITYWORD = 3     # Cost of identity per word
-GECRECOVER = 3000     # Cost of ecrecover op
+GIDENTITYBASE = 15  # Base cost of indentity
+GIDENTITYWORD = 3  # Cost of identity per word
+GECRECOVER = 3000  # Cost of ecrecover op
 
 GSTIPEND = 2300
 
@@ -143,8 +143,12 @@ CALL_CHILD_LIMIT_NUM = 63
 CALL_CHILD_LIMIT_DENOM = 64
 SUICIDE_SUPPLEMENTAL_GAS = 5000
 
-
-memory_writes = {'CALLDATACOPY': (-1,-3), 'CODECOPY': (-1,-3), 'EXTCODECOPY': (-2,-4), 'MSTORE': (-1,32), 'MSTORE8': (-1,8), 'CALL': (-6,-7), 'CALLCODE': (-6,-7), 'DELEGATECALL': (-5,-6)}
-memory_reads = {'SHA3': (-1,-2), 'MLOAD': (-1,32), 'CREATE': (-2,-3), 'CALL': (-4,-5), 'CALLCODE': (-4,-5), 'RETURN': (-1,-2), 'DELEGATECALL': (-3,-4)}
+memory_writes = {'CALLDATACOPY': (-1, -3), 'CODECOPY': (-1, -3), 'EXTCODECOPY': (-2, -4), 'MSTORE': (-1, 32),
+                 'MSTORE8': (-1, 8), 'CALL': (-6, -7), 'CALLCODE': (-6, -7), 'DELEGATECALL': (-5, -6)}
+memory_reads = {'SHA3': (-1, -2), 'MLOAD': (-1, 32), 'CREATE': (-2, -3), 'CALL': (-4, -5), 'CALLCODE': (-4, -5),
+                'RETURN': (-1, -2), 'DELEGATECALL': (-3, -4)}
 storage_writes = {'SSTORE': -1}
 storage_reads = {'SLOAD': -1}
+
+potentially_user_controlled = ['ORIGIN', 'CALLER', 'CALLVALUE', 'CALLDATALOAD', 'CALLDATASIZE', 'CALLDATACOPY',
+                               'EXTCODESIZE', 'EXTCODECOPY', 'MLOAD', 'SLOAD']

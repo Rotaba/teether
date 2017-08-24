@@ -413,7 +413,7 @@ def run_symbolic(program, path, code=None, state=None, ctx=None):
             path = path[1:]
             if not path:
                 state.success = True
-                return (state, constraints, sha_constraints)
+                return SymbolicResult(state, constraints, sha_constraints)
 
         ins = program[state.pc]
         opcode = ins.op
@@ -431,7 +431,7 @@ def run_symbolic(program, path, code=None, state=None, ctx=None):
                 if path:
                     raise IntractablePath()
                 state.success = True
-                return (state, constraints, sha_constraints)
+                return SymbolicResult(state, constraints, sha_constraints)
             elif op == 'ADD':
                 stk.append(stk.pop() + stk.pop())
             elif op == 'SUB':
@@ -795,7 +795,7 @@ def run_symbolic(program, path, code=None, state=None, ctx=None):
             state.success = True
             if path:
                 raise IntractablePath()
-            return (state, constraints, sha_constraints)
+            return SymbolicResult(state, constraints, sha_constraints)
         # Revert opcode (Metropolis)
         elif op == 'REVERT':
             s0, s1 = stk.pop(), stk.pop()
@@ -804,7 +804,7 @@ def run_symbolic(program, path, code=None, state=None, ctx=None):
             mem.extend(s0, s1)
             if path:
                 raise IntractablePath()
-            return (state, constraints, sha_constraints)
+            return SymbolicResult(state, constraints, sha_constraints)
         # SUICIDE opcode (also called SELFDESTRUCT)
         elif op == 'SUICIDE':
             raise ExternalData('SUICIDE')
@@ -814,4 +814,15 @@ def run_symbolic(program, path, code=None, state=None, ctx=None):
     if path:
         raise IntractablePath()
     state.success = True
-    return (state, constraints, sha_constraints)
+    return SymbolicResult(state, constraints, sha_constraints)
+
+
+class SymbolicResult(object):
+    def __init__(self, state, constraints, sha_constraints):
+        self.state = state
+        self.constraints = constraints
+        self.sha_constraints = sha_constraints
+
+    def simplify(self):
+        self.constraints = [z3.simplify(c) for c in self.constraints]
+        self.sha_constraints = {sha: z3.simplify(sha_value) for sha, sha_value in self.sha_constraints.items()}

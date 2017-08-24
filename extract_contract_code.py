@@ -8,7 +8,7 @@ import os
 
 from ethanalyze.cfg import CFG
 from ethanalyze.slicing import backward_slice, slice_to_program
-from ethanalyze.disassemble import generate_BBs_recursive
+from ethanalyze.disassembly import generate_BBs_recursive
 from ethanalyze.memory import resolve_all_memory
 from ethanalyze.project import Project
 

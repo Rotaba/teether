@@ -50,6 +50,7 @@ def model_to_calls(model):
 
 
 def check_and_model(constraints, sha_constraints):
+
     if not sha_constraints:
         sol = z3.Solver()
         sol.add(constraints)
