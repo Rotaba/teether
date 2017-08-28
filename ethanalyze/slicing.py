@@ -1,5 +1,6 @@
 from collections import deque, defaultdict
 
+from ethanalyze.opcodes import potentially_user_controlled
 from .cfg import Instruction
 from .intrange import Range
 
@@ -46,8 +47,6 @@ def backward_slice(ins, taint_args=None, memory_info=None):
         limit -= 1
         stacksize, stack_delta, taintmap, backward_slice, instructions, preds, loops = todo.popleft()
         for ins in instructions[::-1]:
-            ##logging.info(ins)
-            ##logging.info('\t%d | %d | %s'%(stacksize, stack_delta, ', '.join(map(str,sorted(taintmap)))))
             slice_candidate = False
             if taintmap and stacksize - ins.outs <= max(taintmap):
                 slice_candidate = True
@@ -99,22 +98,18 @@ def backward_slice(ins, taint_args=None, memory_info=None):
                 break
 
             if taintmap and stacksize < max(taintmap):
-                # logging.info('GRAAAAAA')
                 pass
             stack_delta += ins.delta
 
         else:
-            if not preds:
-                # logging.info('WARNING, missing predecessor for current slice (%x)'%(startins.addr))
-                if ins:
-                    # logging.info('Last checked address: %x'%ins.addr)
-                    pass
-                    # logging.info('Slice so far:')
-                    # logging.info('\n'.join('\t%s'%i for i in backward_slice[::-1]))
-                    # logging.info('')
             for p in preds:
                 if loops[p] < loop_limit:
                     new_loops = defaultdict(int, loops)
                     new_loops[p] += 1
                     todo.append((stacksize, stack_delta, set(taintmap), list(backward_slice), p.ins, p.pred, new_loops))
     return results
+
+
+def interesting_slices(instruction, args=None):
+    return [bs for bs in backward_slice(instruction, args) if any(
+        ins.name in potentially_user_controlled for ins in bs)]

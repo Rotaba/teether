@@ -1,3 +1,4 @@
+import logging
 from binascii import unhexlify
 
 import z3
@@ -46,17 +47,19 @@ def get_vars(f, rs=set()):
         return set(rs)
 
 
-def add_suffix(expr, level=0):
-    substitutions = dict()
+def add_suffix(expr, level, additional_subst):
+    substitutions = {k:v for k,v in additional_subst}
     for v in z3.z3util.get_vars(expr):
-        if v.sort_kind() == z3.Z3_INT_SORT:
-            substitutions[v] = z3.Int('%s_%d' % (v.decl().name(), level))
-        elif v.sort_kind() == z3.Z3_BOOL_SORT:
-            substitutions[v] = z3.Bool('%s_%d' % (v.decl().name(), level))
-        elif v.sort_kind() == z3.Z3_BV_SORT:
-            substitutions[v] = z3.BitVec('%s_%d' % (v.decl().name(), level), v.size())
-        elif v.sort_kind() == z3.Z3_ARRAY_SORT:
-            substitutions[v] = z3.Array('%s_%d' % (v.decl().name(), level), v.domain(), v.range())
-        else:
-            raise Exception('CANNOT CONVERT %s (%d)' % (v, v.sort_kind()))
-    return z3.substitute(expr, substitutions.items())
+        if v not in substitutions:
+            if v.sort_kind() == z3.Z3_INT_SORT:
+                substitutions[v] = z3.Int('%s_%d' % (v.decl().name(), level))
+            elif v.sort_kind() == z3.Z3_BOOL_SORT:
+                substitutions[v] = z3.Bool('%s_%d' % (v.decl().name(), level))
+            elif v.sort_kind() == z3.Z3_BV_SORT:
+                substitutions[v] = z3.BitVec('%s_%d' % (v.decl().name(), level), v.size())
+            elif v.sort_kind() == z3.Z3_ARRAY_SORT:
+                substitutions[v] = z3.Array('%s_%d' % (v.decl().name(), level), v.domain(), v.range())
+            else:
+                raise Exception('CANNOT CONVERT %s (%d)' % (v, v.sort_kind()))
+    subst = substitutions.items()
+    return z3.substitute(expr, subst)

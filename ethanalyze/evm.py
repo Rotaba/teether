@@ -75,7 +75,7 @@ class Memory(object):
 
 class SymbolicMemory(object):
     def __init__(self):
-        self.memory = z3.Array('memory', z3.BitVecSort(256), z3.BitVecSort(8))
+        self.memory = z3.K(z3.BitVecSort(256), z3.BitVecVal(0, 8))
 
     def __getitem__(self, index):
         if isinstance(index, slice):
@@ -108,9 +108,9 @@ class SymbolicMemory(object):
     def extend(self, start, size):
         pass
 
-    def translate(self, level):
+    def translate(self, level, extra_subst):
         new_memory = copy.copy(self)
-        new_memory.memory = add_suffix(self.memory, level)
+        new_memory.memory = add_suffix(self.memory, level, extra_subst)
         return new_memory
 
 
@@ -126,10 +126,10 @@ class SymbolicStorage(object):
         self.storage = z3.Store(self.storage, index, v)
         self.history.append(self.storage)
 
-    def translate(self, level):
+    def translate(self, level, extra_subst):
         new_storage = copy.copy(self)
-        new_storage.storage = add_suffix(self.storage, level)
-        new_storage.history = [add_suffix(h, level) for h in self.history]
+        new_storage.storage = add_suffix(self.storage, level, extra_subst)
+        new_storage.history = [add_suffix(h, level, extra_subst) for h in self.history]
         return new_storage
 
 
@@ -154,11 +154,19 @@ class SymbolicEVMState(AbstractEVMState):
         self.memory = SymbolicMemory()
         self.storage = SymbolicStorage()
 
-    def translate(self, level):
+    def translate(self, level, extra_subst):
         new_state = copy.copy(self)
-        new_state.memory = self.memory.translate(level)
-        new_state.storage = self.storage.translate(level)
-        new_state.stack = [s if concrete(s) else add_suffix(s, level) for s in self.stack]
+        new_state.memory = self.memory.translate(level, extra_subst)
+        new_state.storage = self.storage.translate(level, extra_subst)
+        new_state.stack = [s if concrete(s) else add_suffix(s, level, extra_subst) for s in self.stack]
+        return new_state
+
+    def rebase(self, storage):
+        subst = [(self.storage.history[0], storage)]
+        new_state = copy.copy(self)
+        new_state.memory = self.memory.rebase(subst)
+        new_state.storage = self.storage.rebase(subst)
+        new_state.stack = [s if concrete(s) else z3.substitute(s, subst) for s in self.stack]
         return new_state
 
 
@@ -417,7 +425,7 @@ def is_true(cond):
     return is_false(z3.Not(cond))
 
 
-def run_symbolic(program, path, code=None, state=None, ctx=None):
+def run_symbolic(program, path, code=None, state=None, ctx=None, inclusive=False):
     state = state or SymbolicEVMState(code=code)
     storage = state.storage
     constraints = []
@@ -428,9 +436,12 @@ def run_symbolic(program, path, code=None, state=None, ctx=None):
     while state.pc in program:
         state.trace.append(state.pc)
         instruction_count += 1
+        if not path and inclusive:
+            state.success = True
+            return SymbolicResult(state, constraints, sha_constraints)
         if state.pc == path[0]:
             path = path[1:]
-            if not path:
+            if not path and not inclusive:
                 state.success = True
                 return SymbolicResult(state, constraints, sha_constraints)
 
@@ -846,10 +857,11 @@ class SymbolicResult(object):
         self.constraints = [z3.simplify(c) for c in self.constraints]
         self.sha_constraints = {sha: z3.simplify(sha_value) for sha, sha_value in self.sha_constraints.items()}
 
-    def translate(self, level):
-        new_state = self.state.translate(level)
-        new_constraints = [add_suffix(c, level) for c in self.constraints]
-        new_sha_constraints = {add_suffix(sha, level): add_suffix(sha_value, level) for sha, sha_value in
+    def translate(self, level, storage_base):
+        subst = [(self.state.storage.history[0], storage_base)]
+        new_state = self.state.translate(level, subst)
+        new_constraints = [add_suffix(c, level, subst) for c in self.constraints]
+        new_sha_constraints = {add_suffix(sha, level, subst): add_suffix(sha_value, level, subst) for sha, sha_value in
                                self.sha_constraints.items()}
         return SymbolicResult(new_state, new_constraints, new_sha_constraints)
 
@@ -867,19 +879,20 @@ class CombinedSymbolicResult(object):
         self._states = None
 
     def _combine(self):
-        translated_results = [result.translate(i) for i, result in enumerate(self.results)]
+        storage_base = z3.K(z3.BitVecSort(256), z3.BitVecVal(0, 256))
+        translated_results = []
+        for i, result in enumerate(self.results):
+            tr = result.translate(i, storage_base)
+            storage_base = tr.state.storage.storage
+            translated_results.append(tr)
+
         self._states = [tr.state for tr in translated_results]
-        # Adapt storages
-        storage_substitutions = [(b.storage.history[0], a.storage.history[-1]) for a, b in
-                                 zip(self._states[:-1], self._states[1:])]
-        self._constraints = [z3.substitue(c, storage_substitutions) for tr in translated_results for c in
-                             tr.constraints]
-        self._sha_constraints = {
-            z3.substitute(sha, storage_substitutions): z3.substitute(sha_value, storage_substitutions) for tr in
-            translated_results for sha, sha_value in tr.sha_constraints.items()}
+        self._constraints = [c for tr in translated_results for c in tr.constraints]
+        self._sha_constraints = {sha: sha_value for tr in translated_results for sha, sha_value in tr.sha_constraints.items()}
 
     def prepend(self, result):
         self.results = [result] + self.results
+        self._reset()
 
     @property
     def constraints(self):
@@ -898,3 +911,7 @@ class CombinedSymbolicResult(object):
         if not self._states:
             self._combine()
         return self._states
+
+    def simplify(self):
+        self._constraints = [z3.simplify(c) for c in self.constraints]
+        self._sha_constraints = {sha: z3.simplify(sha_value) for sha, sha_value in self.sha_constraints.items()}

@@ -2,11 +2,11 @@ import logging
 from binascii import unhexlify
 from collections import defaultdict
 
+from .slicing import interesting_slices
 from .cfg import CFG
 from .disassembly import generate_BBs
 from .evm import run, run_symbolic, IntractablePath, concrete
-from .opcodes import potentially_user_controlled
-from .slicing import backward_slice, slice_to_program
+from .slicing import slice_to_program
 
 
 class Project(object):
@@ -49,25 +49,21 @@ class Project(object):
     def run(self, program):
         return run(program, code=self.code)
 
-    def run_symbolic(self, path):
-        return run_symbolic(self.prg, path, self.code)
+    def run_symbolic(self, path, inclusive=False):
+        return run_symbolic(self.prg, path, self.code, inclusive=inclusive)
 
-    def interesting_slices(self, instruction, args=None):
-        return [bs for bs in backward_slice(instruction, args) if any(
-            ins.name in potentially_user_controlled for ins in bs)]
-
-    def get_constraints(self, instructions, args=None):
+    def get_constraints(self, instructions, args=None, inclusive=False):
 
         for ins in instructions:
-            interesting_slices = self.interesting_slices(ins, args)
+            slices = interesting_slices(ins, args)
             # Check if ins.bb is set, as slices include padding instructions (PUSH, POP)
-            interesting_sub_paths = [[i.bb.start for i in bs if i.bb] for bs in interesting_slices]
+            interesting_sub_paths = [[i.bb.start for i in bs if i.bb] for bs in slices]
             for path in self.cfg.get_paths(ins):
                 # If this path is NOT a superset of an interesting slice, skip it
                 if not any(all(loc in path for loc in sub_path) for sub_path in interesting_sub_paths):
                     continue
                 try:
-                    yield ins, path, self.run_symbolic(path)
+                    yield ins, path, self.run_symbolic(path, inclusive)
                 except IntractablePath:
                     continue
                 except Exception as e:
@@ -78,7 +74,7 @@ class Project(object):
         sstore_ins = self.filter_ins('SSTORE')
         self._writes = defaultdict(set)
         for store in sstore_ins:
-            for bs in self.interesting_slices(store):
+            for bs in slicing.interesting_slices(store):
                 # TODO: Devise a better way to mark whether the last instruction of a path should be executed OR NOT
                 bs.append(store)
                 prg = slice_to_program(bs)
@@ -99,4 +95,4 @@ class Project(object):
         concrete_writes = set()
         if concrete(addr) and addr in self.writes:
             concrete_writes = self.writes[addr]
-        return (concrete_writes, self.symbolic_writes)
+        return concrete_writes, self.symbolic_writes
