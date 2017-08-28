@@ -63,8 +63,10 @@ def check_model_and_resolve(constraints, sha_constraints):
             return m
         except UnresolvedConstraints as e:
             bad_hashes = e.unresolved
-            print bad_hashes
-            for a, b in itertools.combinations(bad_hashes, 2):
+            logging.debug(bad_hashes)
+            for a, b in itertools.chain(itertools.combinations(bad_hashes, 2), itertools.product(set(sha_constraints.keys()) - bad_hashes, bad_hashes)):
+                if sha_constraints[a].size() != sha_constraints[b].size():
+                    continue
                 s = z3.Solver()
                 s.add(constraints + extra_constraints + [a != b])
                 if s.check() == z3.unsat:

@@ -4,8 +4,8 @@ from collections import defaultdict
 
 from .cfg import CFG
 from .disassembly import generate_BBs
-from .evm import run, run_symbolic, IntractablePath, concrete
-from .slicing import interesting_slices
+from .evm import run, run_symbolic, IntractablePath, concrete, ExternalData
+from .slicing import interesting_slices, backward_slice
 from .slicing import slice_to_program
 
 
@@ -55,16 +55,21 @@ class Project(object):
     def get_constraints(self, instructions, args=None, inclusive=False):
 
         for ins in instructions:
-            slices = interesting_slices(ins, args)
-            # Check if ins.bb is set, as slices include padding instructions (PUSH, POP)
-            interesting_sub_paths = [[i.bb.start for i in bs if i.bb] for bs in slices]
+            if args:
+                slices = interesting_slices(ins, args)
+                # Check if ins.bb is set, as slices include padding instructions (PUSH, POP)
+                interesting_sub_paths = [[i.bb.start for i in bs if i.bb] for bs in slices]
             for path in self.cfg.get_paths(ins):
+                logging.debug('Path %s', ' -> '.join('%x'%p for p in path))
                 # If this path is NOT a superset of an interesting slice, skip it
-                if not any(all(loc in path for loc in sub_path) for sub_path in interesting_sub_paths):
+                if args and not any(all(loc in path for loc in sub_path) for sub_path in interesting_sub_paths):
                     continue
                 try:
+                    logging.debug('This could be interesting...')
                     yield ins, path, self.run_symbolic(path, inclusive)
                 except IntractablePath:
+                    continue
+                except ExternalData:
                     continue
                 except Exception as e:
                     logging.exception('Failed path due to %s', e)
@@ -74,7 +79,7 @@ class Project(object):
         sstore_ins = self.filter_ins('SSTORE')
         self._writes = defaultdict(set)
         for store in sstore_ins:
-            for bs in slicing.interesting_slices(store):
+            for bs in interesting_slices(store):
                 # TODO: Devise a better way to mark whether the last instruction of a path should be executed OR NOT
                 bs.append(store)
                 prg = slice_to_program(bs)

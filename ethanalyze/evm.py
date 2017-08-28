@@ -913,6 +913,10 @@ class CombinedSymbolicResult(object):
             self._combine()
         return self._states
 
+    @property
+    def state(self):
+        return self.states[-1]
+
     def simplify(self):
         self._constraints = [z3.simplify(c) for c in self.constraints]
         self._sha_constraints = {sha: z3.simplify(sha_value) for sha, sha_value in self.sha_constraints.items()}
