@@ -1,8 +1,10 @@
 try:
     from Crypto.Hash import keccak
+
     sha3_256 = lambda x: keccak.new(digest_bits=256, data=x).digest()
 except ImportError:
     import sha3 as _sha3
+
     sha3_256 = lambda x: _sha3.keccak_256(x).digest()
 import random
 import sys
@@ -16,39 +18,47 @@ try:
     import secp256k1
 except ImportError:
     import warnings
+
     warnings.warn('could not import secp256k1', ImportWarning)
     secp256k1 = None
 
 big_endian_to_int = lambda x: big_endian_int.deserialize(str_to_bytes(x).lstrip(b'\x00'))
 int_to_big_endian = lambda x: big_endian_int.serialize(x)
 
-
 TT256 = 2 ** 256
 TT256M1 = 2 ** 256 - 1
 TT255 = 2 ** 255
-SECP256K1P = 2**256 - 4294968273
+SECP256K1P = 2 ** 256 - 4294968273
 
 if sys.version_info.major == 2:
     is_numeric = lambda x: isinstance(x, (int, long))
     is_string = lambda x: isinstance(x, (str, unicode))
 
+
     def to_string(value):
         return str(value)
+
 
     def int_to_bytes(value):
         if isinstance(value, str):
             return value
         return int_to_big_endian(value)
 
+
     def to_string_for_regexp(value):
         return str(value)
+
+
     unicode = unicode
+
 
     def bytearray_to_bytestr(value):
         return bytes(''.join(chr(c) for c in value))
 
+
     def encode_int32(v):
         return zpad(int_to_big_endian(v), 32)
+
 
     def bytes_to_int(value):
         return big_endian_to_int(bytes(''.join(chr(c) for c in value)))
@@ -56,6 +66,7 @@ if sys.version_info.major == 2:
 else:
     is_numeric = lambda x: isinstance(x, int)
     is_string = lambda x: isinstance(x, bytes)
+
 
     def to_string(value):
         if isinstance(value, bytes):
@@ -65,20 +76,27 @@ else:
         if isinstance(value, int):
             return bytes(str(value), 'utf-8')
 
+
     def int_to_bytes(value):
         if isinstance(value, bytes):
             return value
         return int_to_big_endian(value)
 
+
     def to_string_for_regexp(value):
         return str(to_string(value), 'utf-8')
+
+
     unicode = str
+
 
     def bytearray_to_bytestr(value):
         return bytes(value)
 
+
     def encode_int32(v):
         return v.to_bytes(32, byteorder='big')
+
 
     def bytes_to_int(value):
         return int.from_bytes(value, byteorder='big')
@@ -139,6 +157,7 @@ def safe_ord(value):
     else:
         return ord(value)
 
+
 # decorator
 
 
@@ -150,7 +169,9 @@ def debug(label):
             x = f(*args, **kwargs)
             print(label, i, 'end', x)
             return x
+
         return inner
+
     return deb
 
 
@@ -175,22 +196,24 @@ def int_to_32bytearray(i):
         i >>= 8
     return o
 
+
 # sha3_count = [0]
 
 
 def sha3(seed):
     return sha3_256(to_string(seed))
 
+
 assert encode_hex(sha3(b'')) == 'c5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470'
 
 
 def privtoaddr(k):
     k = normalize_key(k)
-    x, y  = privtopub(k)
+    x, y = privtopub(k)
     return sha3(encode_int32(x) + encode_int32(y))[12:]
 
 
-def checksum_encode(addr): # Takes a 20-byte binary address as input
+def checksum_encode(addr):  # Takes a 20-byte binary address as input
     addr = normalize_address(addr)
     o = ''
     v = big_endian_to_int(sha3(encode_hex(addr)))
@@ -198,11 +221,13 @@ def checksum_encode(addr): # Takes a 20-byte binary address as input
         if c in '0123456789':
             o += c
         else:
-            o += c.upper() if (v & (2**(255 - 4*i))) else c.lower()
-    return '0x'+o
+            o += c.upper() if (v & (2 ** (255 - 4 * i))) else c.lower()
+    return '0x' + o
+
 
 def check_checksum(addr):
     return checksum_encode(normalize_address(addr)) == addr
+
 
 def normalize_address(x, allow_blank=False):
     if is_numeric(x):
@@ -220,6 +245,7 @@ def normalize_address(x, allow_blank=False):
         raise Exception("Invalid address format: %r" % x)
     return x
 
+
 def normalize_key(key):
     if is_numeric(key):
         o = encode_int32(key)
@@ -235,6 +261,7 @@ def normalize_key(key):
         raise Exception("Zero privkey invalid")
     return o
 
+
 def zpad(x, l):
     """ Left zero pad value `x` at least to length `l`.
 
@@ -249,6 +276,7 @@ def zpad(x, l):
     """
     return b'\x00' * max(0, l - len(x)) + x
 
+
 def rzpad(value, total_length):
     """ Right zero pad value `x` at least to length `l`.
 
@@ -262,6 +290,7 @@ def rzpad(value, total_length):
     '\xca\xfe'
     """
     return value + b'\x00' * max(0, total_length - len(value))
+
 
 def int_to_addr(x):
     o = [b''] * 20
@@ -493,7 +522,9 @@ def print_func_call(ignore_first_arg=False, max_call_number=100):
             if local['call_number'] > 100:
                 raise Exception("Touch max call number!")
             return res
+
         return wrapper
+
     return inner
 
 
@@ -505,7 +536,6 @@ def dump_state(trie):
 
 
 class Denoms():
-
     def __init__(self):
         self.wei = 1
         self.babbage = 10 ** 3
@@ -523,7 +553,6 @@ class Denoms():
 
 
 denoms = Denoms()
-
 
 address = Binary.fixed_length(20, allow_empty=True)
 int20 = BigEndianInt(20)

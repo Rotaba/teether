@@ -1,8 +1,8 @@
+import itertools
 import logging
 from binascii import hexlify
 from collections import defaultdict
 
-import itertools
 from z3 import z3, z3util
 
 import utils
@@ -54,6 +54,7 @@ def model_to_calls(model):
 
     return [v for k, v in sorted(calls.iteritems())]
 
+
 def check_model_and_resolve(constraints, sha_constraints):
     extra_constraints = []
     while True:
@@ -63,14 +64,15 @@ def check_model_and_resolve(constraints, sha_constraints):
         except UnresolvedConstraints as e:
             bad_hashes = e.unresolved
             print bad_hashes
-            for a,b in itertools.combinations(bad_hashes, 2):
+            for a, b in itertools.combinations(bad_hashes, 2):
                 s = z3.Solver()
                 s.add(constraints + extra_constraints + [a != b])
                 if s.check() == z3.unsat:
                     extra_constraints.append(sha_constraints[a] == sha_constraints[b])
-                    subst = [(a,b)]
+                    subst = [(a, b)]
                     constraints = [z3.substitute(c, subst) for c in constraints]
-                    sha_constraints = {z3.substitute(sha, subst): z3.substitute(sha_value, subst) for sha, sha_value in sha_constraints.items()}
+                    sha_constraints = {z3.substitute(sha, subst): z3.substitute(sha_value, subst) for sha, sha_value in
+                                       sha_constraints.items()}
                     break
             else:
                 raise IntractablePath()

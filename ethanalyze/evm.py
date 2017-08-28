@@ -888,7 +888,8 @@ class CombinedSymbolicResult(object):
 
         self._states = [tr.state for tr in translated_results]
         self._constraints = [c for tr in translated_results for c in tr.constraints]
-        self._sha_constraints = {sha: sha_value for tr in translated_results for sha, sha_value in tr.sha_constraints.items()}
+        self._sha_constraints = {sha: sha_value for tr in translated_results for sha, sha_value in
+                                 tr.sha_constraints.items()}
 
     def prepend(self, result):
         self.results = [result] + self.results

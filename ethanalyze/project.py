@@ -2,10 +2,10 @@ import logging
 from binascii import unhexlify
 from collections import defaultdict
 
-from .slicing import interesting_slices
 from .cfg import CFG
 from .disassembly import generate_BBs
 from .evm import run, run_symbolic, IntractablePath, concrete
+from .slicing import interesting_slices
 from .slicing import slice_to_program
 
 

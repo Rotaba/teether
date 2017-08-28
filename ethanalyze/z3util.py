@@ -1,4 +1,3 @@
-import logging
 from binascii import unhexlify
 
 import z3
@@ -48,7 +47,7 @@ def get_vars(f, rs=set()):
 
 
 def add_suffix(expr, level, additional_subst):
-    substitutions = {k:v for k,v in additional_subst}
+    substitutions = {k: v for k, v in additional_subst}
     for v in z3.z3util.get_vars(expr):
         if v not in substitutions:
             if v.sort_kind() == z3.Z3_INT_SORT:

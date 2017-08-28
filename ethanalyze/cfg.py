@@ -159,7 +159,7 @@ class CFG(object):
             ins_block = '<br align="left"/>'.join(
                 '%4x: %02x %s %s' % (ins.addr, ins.op, ins.name, hexlify(ins.arg) if ins.arg else '') for ins in bb.ins)
             s += '\t%d [shape=box,label=<<b>%x</b>:<br align="left"/>%s<br align="left"/>>];\n' % (
-            bb.start, bb.start, ins_block)
+                bb.start, bb.start, ins_block)
         s += '\n'
         for bb in sorted(self.bbs, key=lambda x: x.start):
             for succ in sorted(bb.succ, key=lambda x: x.start):

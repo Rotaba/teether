@@ -18,7 +18,7 @@ def call_constraints(codepath):
         logging.info('No CALL instructions')
         return
     logging.info('Found %d CALL instructions' % len(call_ins))
-    for call, path, r in p.get_constraints(call_ins, [1,2]):
+    for call, path, r in p.get_constraints(call_ins, [1, 2]):
         r.simplify()
         if len(r.state.stack) < 3:
             logging.error('Stack underflow??')
@@ -42,7 +42,7 @@ if __name__ == '__main__':
         print 'Call: %s' % call
         print 'Path taken: %s' % (' -> '.join('%x' % addr for addr in path))
         print 'Summary: %s' % (
-        ', '.join(map(str, dependency_summary(r.constraints + [target] + [amount], r.sha_constraints))))
+            ', '.join(map(str, dependency_summary(r.constraints + [target] + [amount], r.sha_constraints))))
         if detailed:
             print '-' * 32
             print 'Target: %s' % (' '.join(str(target).split()))

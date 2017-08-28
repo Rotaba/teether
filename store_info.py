@@ -41,7 +41,8 @@ if __name__ == '__main__':
         print '=' * 32
         print 'Call: %s' % store
         print 'Path taken: %s' % (' -> '.join('%x' % addr for addr in path))
-        print 'Summary: %s' % (', '.join(map(str, dependency_summary(r.constraints + [address, value], r.sha_constraints))))
+        print 'Summary: %s' % (
+        ', '.join(map(str, dependency_summary(r.constraints + [address, value], r.sha_constraints))))
         if detailed:
             print '-' * 32
             print 'Address: %s' % (' '.join(str(address).split()))
