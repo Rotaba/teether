@@ -14,7 +14,7 @@ def slice_to_program(s):
     return program
 
 
-def backward_slice(ins, taint_args=None, memory_info=None):
+def backward_slice(ins, taint_args=None, memory_info=None, loop_limit=2):
     def adjust_stack(backward_slice, stack_delta):
         if stack_delta > 0:
             backward_slice.extend(Instruction(0x0, 0x63, '\xde\xad\xc0\xde') for _ in xrange(abs(stack_delta)))
@@ -39,13 +39,11 @@ def backward_slice(ins, taint_args=None, memory_info=None):
     bb = ins.bb
     idx = bb.ins.index(ins)
     loops = defaultdict(int)
-    todo.append((stacksize, stack_delta, taintmap, backward_slice, bb.ins[:idx], bb.pred, loops))
+    todo.append((stacksize, stack_delta, taintmap, memory_taint, backward_slice, bb.ins[:idx], bb.pred, loops))
     results = []
-    limit = 100000
-    loop_limit = 2
-    while todo and limit > 0:
-        limit -= 1
-        stacksize, stack_delta, taintmap, backward_slice, instructions, preds, loops = todo.popleft()
+    cache = dict()
+    while todo:
+        stacksize, stack_delta, taintmap, memory_taint, backward_slice, instructions, preds, loops = todo.popleft()
         for ins in instructions[::-1]:
             slice_candidate = False
             if taintmap and stacksize - ins.outs <= max(taintmap):
@@ -106,7 +104,7 @@ def backward_slice(ins, taint_args=None, memory_info=None):
                 if loops[p] < loop_limit:
                     new_loops = defaultdict(int, loops)
                     new_loops[p] += 1
-                    todo.append((stacksize, stack_delta, set(taintmap), list(backward_slice), p.ins, p.pred, new_loops))
+                    todo.append((stacksize, stack_delta, set(taintmap), memory_taint, list(backward_slice), p.ins, p.pred, new_loops))
     return results
 
 
