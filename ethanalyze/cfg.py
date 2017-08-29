@@ -28,6 +28,14 @@ class Instruction(object):
     def __repr__(self):
         return str(self)
 
+    def __hash__(self):
+        return 17 * self.addr + 19 * self.op + 23 * hash(self.arg)
+
+    def __eq__(self, other):
+        return (self.addr == other.addr and
+                self.op == other.op and
+                self.arg == other.arg)
+
 
 class BB(object):
     def __init__(self, ins):
@@ -134,7 +142,6 @@ class CFG(object):
             new_link = False
             for pred in self.bbs:
                 if not pred.jump_resolved:
-                    # only interested in jump-target
                     succ_addrs, new_succ_addrs = pred.get_succ_addrs_full()
                     for succ_addr in new_succ_addrs:
                         if not succ_addr in self._bb_at:
