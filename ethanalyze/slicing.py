@@ -1,3 +1,4 @@
+import logging
 from collections import deque, defaultdict
 
 from ethanalyze.opcodes import potentially_user_controlled
@@ -155,11 +156,16 @@ def backward_slice(ins, taint_args=None, memory_info=None, loop_limit=2):
                      bb.pred, loops))
     results = []
     cache = set()
+    taintcache = set()
     while todo:
         state = todo.popleft()
         if state in cache:
             continue
         cache.add(state)
+        if (state.taintmap, state.memory_taint) not in taintcache:
+            taintcache.add((state.taintmap, state.memory_taint))
+        logging.debug('Cachesize: %d\tTaint-Cachesize: %d\t(slicing %x, currently at %x)', len(cache), len(taintcache), ins.addr, state.instructions[-1].addr)
+        logging.debug('Current state: %s', state)
         new_results, new_todo = advance_slice(state, memory_info, loop_limit)
         results.extend(new_results)
         todo.extend(new_todo)

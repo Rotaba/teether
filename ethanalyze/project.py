@@ -9,12 +9,12 @@ from .slicing import interesting_slices, backward_slice
 from .slicing import slice_to_program
 
 
-class Project(object):
-    @staticmethod
-    def load(path):
-        with open(path) as infile:
-            return Project(unhexlify(infile.read().strip()))
+def load(path):
+    with open(path) as infile:
+        return Project(unhexlify(infile.read().strip()))
 
+
+class Project(object):
     def __init__(self, code, cfg=None):
         self.code = code
         self._prg = None
@@ -60,7 +60,7 @@ class Project(object):
                 # Check if ins.bb is set, as slices include padding instructions (PUSH, POP)
                 interesting_sub_paths = [[i.bb.start for i in bs if i.bb] for bs in slices]
             for path in self.cfg.get_paths(ins):
-                logging.debug('Path %s', ' -> '.join('%x'%p for p in path))
+                logging.debug('Path %s', ' -> '.join('%x' % p for p in path))
                 # If this path is NOT a superset of an interesting slice, skip it
                 if args and not any(all(loc in path for loc in sub_path) for sub_path in interesting_sub_paths):
                     continue

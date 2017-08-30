@@ -64,23 +64,17 @@ class BB(object):
             for b in bs:
                 if 0x60 <= b[-1].op <= 0x7f:
                     succ_addr = int(hexlify(b[-1].arg), 16)
-                    if not succ_addr in self.succ_addrs:
-                        self.succ_addrs.add(succ_addr)
-                        new_succ_addrs.add(succ_addr)
                 else:
                     p = slice_to_program(b)
                     try:
                         succ_addr = run(p, check_initialized=True).stack.pop()
-                        if not succ_addr in self.succ_addrs:
-                            self.succ_addrs.add(succ_addr)
-                            new_succ_addrs.add(succ_addr)
-                    except ExternalData as e:
-                        pass
-                        # logging.exception('WARNING, COULD NOT EXECUTE SLICE', repr(e))
-                    except UninitializedRead as e:
-                        pass
-                        # logging.exception('WARNING, COULD NOT EXECUTE SLICE', repr(e))
-        return (self.succ_addrs, new_succ_addrs)
+                    except (ExternalData, UninitializedRead) as e:
+                        continue
+                        # logging.exception('WARNING, COULD NOT EXECUTE SLICE')
+                if not succ_addr in self.succ_addrs:
+                    self.succ_addrs.add(succ_addr)
+                    new_succ_addrs.add(succ_addr)
+        return self.succ_addrs, new_succ_addrs
 
     def get_succ_addrs(self):
         if self.ins[-1].op in (0x56, 0x57):
@@ -112,20 +106,24 @@ class BB(object):
 
 
 class CFG(object):
-    def __init__(self, bbs, fix_xrefs=True):
+    def __init__(self, bbs, fix_xrefs=True, fix_only_easy_xrefs=False):
         self.bbs = sorted(bbs, key=lambda bb: bb.start)
         self._bb_at = {bb.start: bb for bb in self.bbs}
-        if fix_xrefs:
-            self._xrefs()
+        if fix_xrefs or fix_only_easy_xrefs:
+            self._xrefs(fix_only_easy_xrefs)
 
     def filter_ins(self, names):
         if isinstance(names, basestring):
             names = [names]
         return [ins for bb in self.bbs for ins in bb.ins if ins.name in names]
 
-    def _xrefs(self):
+    def _xrefs(self, fix_only_easy_xrefs=False):
+        logging.debug('Fixing Xrefs')
         self._easy_xrefs()
-        self._hard_xrefs()
+        logging.debug('Easy Xrefs fixed, no turning to hard ones')
+        if not fix_only_easy_xrefs:
+            self._hard_xrefs()
+        logging.debug('Hard Xrefs also fixed, good to go')
 
     def _easy_xrefs(self):
         for pred in self.bbs:
@@ -152,6 +150,7 @@ class CFG(object):
                         pred.succ.add(succ)
                         succ.pred.add(pred)
                         if not (pred.start, succ.start) in links:
+                            logging.debug('found new link from %x to %x', pred.start, succ.start)
                             new_link = True
                             links.add((pred.start, succ.start))
 
