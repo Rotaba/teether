@@ -46,21 +46,63 @@ class BB(object):
         self.pred = set()
         self.succ = set()
         self.succ_addrs = set()
-        self.jump_resolved = False
+        self.pred_paths = defaultdict(set)
+        self.indirect_jump = self.ins[-1].op in (0x56, 0x57)
+        self.ancestors = set()
+        self.descendants = set()
+        # maintain a set of 'must_visit' contraints to limit backward-slices to only new slices after new egdes are added
+        # initialliy, no constrain is given (= empty set)
+        self.must_visit = [set()]
+
+    @property
+    def jump_resolved(self):
+        return not self.indirect_jump or len(self.must_visit) == 0
+
+    def update_ancestors(self, new_ancestors):
+        new_ancestors = new_ancestors - self.ancestors
+        if new_ancestors:
+            self.ancestors.update(new_ancestors)
+            for s in self.succ:
+                s.update_ancestors(new_ancestors)
+
+    def update_descendants(self, new_descendants):
+        new_descendants = new_descendants - self.descendants
+        if new_descendants:
+            self.descendants.update(new_descendants)
+            for p in self.pred:
+                p.update_descendants(new_descendants)
+
+    def add_succ(self, other, path):
+        self.succ.add(other)
+        other.pred.add(self)
+        self.update_descendants(other.descendants | {other.start})
+        other.update_ancestors(self.ancestors | {self.start})
+        other.pred_paths[self].add(frozenset(path))
+        seen = set()
+        todo = deque()
+        todo.append(other)
+        while todo:
+            bb = todo.popleft()
+            if bb not in seen:
+                seen.add(bb)
+                if bb.indirect_jump:
+                    bb.must_visit.append({self.start})
+                logging.debug('BB@%x, must_visit: %s', bb.start, bb.must_visit)
+                todo.extend(s for s in bb.succ if s not in seen)
 
     def _find_jump_target(self):
         if len(self.ins) >= 2 and 0x60 <= self.ins[-2].op <= 0x71:
-            self.jump_resolved = True
+            self.must_visit = []
             return int(hexlify(self.ins[-2].arg), 16)
         else:
             return None
 
-    def get_succ_addrs_full(self):
+    def get_succ_addrs_full(self, valid_jump_targets):
         from .slicing import slice_to_program, backward_slice
         from .evm import ExternalData, run
         new_succ_addrs = set()
-        if not self.jump_resolved:
-            bs = backward_slice(self.ins[-1], [0])
+        if self.indirect_jump and not self.jump_resolved:
+            bs = backward_slice(self.ins[-1], [0], must_visits=self.must_visit)
             for b in bs:
                 if 0x60 <= b[-1].op <= 0x7f:
                     succ_addr = int(hexlify(b[-1].arg), 16)
@@ -68,21 +110,32 @@ class BB(object):
                     p = slice_to_program(b)
                     try:
                         succ_addr = run(p, check_initialized=True).stack.pop()
-                    except (ExternalData, UninitializedRead) as e:
+                    except (ExternalData, UninitializedRead):
                         continue
-                        # logging.exception('WARNING, COULD NOT EXECUTE SLICE')
-                if not succ_addr in self.succ_addrs:
+                if succ_addr not in valid_jump_targets:
+                    logging.warning('Jump to invalid address')
+                    continue
+                path = frozenset(ins.bb.start for ins in b if ins.bb)
+                if succ_addr not in self.succ_addrs:
                     self.succ_addrs.add(succ_addr)
-                    new_succ_addrs.add(succ_addr)
+                if (path, succ_addr) not in new_succ_addrs:
+                    new_succ_addrs.add((path, succ_addr))
+        # We did our best,
+        # if someone finds a new edge, jump_resolved will be set to False by the BFS in add_succ
+        self.must_visit = []
         return self.succ_addrs, new_succ_addrs
 
-    def get_succ_addrs(self):
+    def get_succ_addrs(self, valid_jump_targets):
         if self.ins[-1].op in (0x56, 0x57):
             jump_target = self._find_jump_target()
-            if jump_target:
-                self.succ_addrs.add(jump_target)
+            if jump_target is not None:
+                self.indirect_jump = False
+                if jump_target in valid_jump_targets:
+                    self.succ_addrs.add(jump_target)
+            else:
+                self.indirect_jump = True
         else:
-            self.jump_resolved = True
+            self.must_visit = []
         if self.ins[-1].op not in (0x00, 0x56, 0xf3, 0xfd, 0xfe, 0xff):
             fallthrough = self.ins[-1].next_addr
             if fallthrough:
@@ -109,6 +162,7 @@ class CFG(object):
     def __init__(self, bbs, fix_xrefs=True, fix_only_easy_xrefs=False):
         self.bbs = sorted(bbs, key=lambda bb: bb.start)
         self._bb_at = {bb.start: bb for bb in self.bbs}
+        self.valid_jump_targets = frozenset({bb.start for bb in self.bbs if bb.ins[0].name == 'JUMPDEST'})
         if fix_xrefs or fix_only_easy_xrefs:
             self._xrefs(fix_only_easy_xrefs)
 
@@ -120,18 +174,17 @@ class CFG(object):
     def _xrefs(self, fix_only_easy_xrefs=False):
         logging.debug('Fixing Xrefs')
         self._easy_xrefs()
-        logging.debug('Easy Xrefs fixed, no turning to hard ones')
+        logging.debug('Easy Xrefs fixed, turning to hard ones now')
         if not fix_only_easy_xrefs:
             self._hard_xrefs()
         logging.debug('Hard Xrefs also fixed, good to go')
 
     def _easy_xrefs(self):
         for pred in self.bbs:
-            for succ_addr in pred.get_succ_addrs():
+            for succ_addr in pred.get_succ_addrs(self.valid_jump_targets):
                 if succ_addr and succ_addr in self._bb_at:
                     succ = self._bb_at[succ_addr]
-                    pred.succ.add(succ)
-                    succ.pred.add(pred)
+                    pred.add_succ(succ, {pred.start})
 
     def _hard_xrefs(self):
         new_link = True
@@ -140,17 +193,18 @@ class CFG(object):
             new_link = False
             for pred in self.bbs:
                 if not pred.jump_resolved:
-                    succ_addrs, new_succ_addrs = pred.get_succ_addrs_full()
-                    for succ_addr in new_succ_addrs:
+                    succ_addrs, new_succ_addrs = pred.get_succ_addrs_full(self.valid_jump_targets)
+                    for new_succ_path, succ_addr in new_succ_addrs:
                         if not succ_addr in self._bb_at:
                             logging.warn(
                                 'WARNING, NO BB @ %x (possible successor of BB @ %x)' % (succ_addr, pred.start))
                             continue
                         succ = self._bb_at[succ_addr]
-                        pred.succ.add(succ)
-                        succ.pred.add(pred)
+                        pred.add_succ(succ, new_succ_path)
                         if not (pred.start, succ.start) in links:
                             logging.debug('found new link from %x to %x', pred.start, succ.start)
+                            with open('cfg-tmp%d.dot' % len(links), 'w') as outfile:
+                                outfile.write(self.to_dot())
                             new_link = True
                             links.add((pred.start, succ.start))
 
@@ -162,14 +216,22 @@ class CFG(object):
         s += '\tsplines=ortho;\n'
         s += '\tnode[fontname="courier"];\n'
         for bb in sorted(self.bbs, key=lambda x: x.start):
+            from_block = 'From: ' + ', '.join('%x' % pred.start for pred in bb.pred)
+            to_block = 'To: ' + ', '.join('%x' % succ.start for succ in bb.succ)
             ins_block = '<br align="left"/>'.join(
                 '%4x: %02x %s %s' % (ins.addr, ins.op, ins.name, hexlify(ins.arg) if ins.arg else '') for ins in bb.ins)
-            s += '\t%d [shape=box,label=<<b>%x</b>:<br align="left"/>%s<br align="left"/>>];\n' % (
-                bb.start, bb.start, ins_block)
+            # ancestors = 'Ancestors: %s'%(', '.join('%x'%addr for addr in sorted(a for a in bb.ancestors)))
+            # descendants = 'Descendants: %s' % (', '.join('%x' % addr for addr in sorted(a for a in bb.descendants)))
+            # s += '\t%d [shape=box,label=<<b>%x</b>:<br align="left"/>%s<br align="left"/>%s<br align="left"/>%s<br align="left"/>>];\n' % (
+            #    bb.start, bb.start, ins_block, ancestors, descendants)
+            s += '\t%d [shape=box,label=<%s<br align="left"/><b>%x</b>:<br align="left"/>%s<br align="left"/>%s<br align="left"/>>];\n' % (
+                bb.start, from_block, bb.start, ins_block, to_block)
         s += '\n'
         for bb in sorted(self.bbs, key=lambda x: x.start):
             for succ in sorted(bb.succ, key=lambda x: x.start):
-                s += '\t%d -> %d;\n' % (bb.start, succ.start)
+                pths = succ.pred_paths[bb]
+                s += '\t%d -> %d [xlabel="%s"];\n' % (
+                    bb.start, succ.start, '|'.join(' -> '.join('%x' % a for a in p) for p in pths))
         s += '}'
         return s
 

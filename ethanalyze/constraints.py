@@ -56,6 +56,7 @@ def model_to_calls(model):
 
 
 def check_model_and_resolve(constraints, sha_constraints):
+    logging.debug('-'*32)
     extra_constraints = []
     while True:
         try:
@@ -63,24 +64,32 @@ def check_model_and_resolve(constraints, sha_constraints):
             return m
         except UnresolvedConstraints as e:
             bad_hashes = e.unresolved
-            logging.debug(bad_hashes)
+            logging.debug("Bad hashes: %s", bad_hashes)
+            for h in bad_hashes:
+                logging.debug("BAD: %s: %s", h, sha_constraints[h])
             for a, b in itertools.chain(itertools.combinations(bad_hashes, 2), itertools.product(set(sha_constraints.keys()) - bad_hashes, bad_hashes)):
                 if sha_constraints[a].size() != sha_constraints[b].size():
                     continue
                 s = z3.Solver()
-                s.add(constraints + extra_constraints + [a != b])
-                if s.check() == z3.unsat:
+                s.add(constraints + extra_constraints + [a != b, sha_constraints[a] != sha_constraints[b]])
+                check_result = s.check()
+                logging.debug("Checking hashes %s and %s: %s", a, b, check_result)
+                if check_result == z3.unsat:
+                    logging.debug("Hashes MUST be equal: %s and %s", a, b)
                     extra_constraints.append(sha_constraints[a] == sha_constraints[b])
                     subst = [(a, b)]
                     constraints = [z3.substitute(c, subst) for c in constraints]
                     sha_constraints = {z3.substitute(sha, subst): z3.substitute(sha_value, subst) for sha, sha_value in
                                        sha_constraints.items()}
                     break
+                else:
+                    logging.debug("Hashes COULD be equal: %s and %s", a, b)
             else:
-                raise IntractablePath()
+                raise IntractablePath(bad_hashes)
 
 
 def check_and_model(constraints, sha_constraints):
+    logging.debug(' '*16 + '-' * 16)
     if not sha_constraints:
         sol = z3.Solver()
         sol.add(constraints)
@@ -102,15 +111,18 @@ def check_and_model(constraints, sha_constraints):
                 progress = True
                 sol.add(c)
         unresolved_vars = set(v for c in new_todo for v in get_vars(c))
+        logging.debug("Unresolved vars: %s", ','.join(map(str, unresolved_vars)))
         if sol.check() != z3.sat:
             raise IntractablePath()
         m = sol.model()
         for u in set(unresolved):
             c = sha_constraints[u]
+            logging.debug("Trying to resolve %s, vars: %s", u, ','.join(map(str, get_vars(c))))
             if any(x in unresolved_vars for x in get_vars(c)):
                 continue
             v = m.eval(c)
             if z3util.is_expr_val(v):
+                logging.debug("%s can be resolved", u)
                 logging.debug("Hashing %s", hexlify(to_bytes(v)))
                 sha = utils.big_endian_to_int(utils.sha3(to_bytes(v)))
                 sol.add(c == v)

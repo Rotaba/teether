@@ -24,7 +24,7 @@ def adjust_stack(backward_slice, stack_delta):
 
 class SlicingState(object):
     def __init__(self, stacksize, stack_underflow, stack_delta, taintmap, memory_taint, backward_slice, instructions,
-                 preds, loops):
+                 bb, loops, must_visit):
         self.stacksize = stacksize
         self.stack_underflow = stack_underflow
         self.stack_delta = stack_delta
@@ -32,12 +32,15 @@ class SlicingState(object):
         self.memory_taint = memory_taint
         self.backward_slice = tuple(backward_slice)
         self.instructions = tuple(instructions)
-        self.preds = preds
+        self.bb = bb
         self.loops = loops
+        self.must_visit = frozenset(must_visit)
 
     def __hash__(self):
-        return sum(a * b for a, b in zip((23, 29, 31, 37, 41), (self.stacksize, self.stack_delta, hash(self.taintmap),
-                                                                hash(self.instructions), hash(self.backward_slice))))
+        return sum(
+            a * b for a, b in zip((23, 29, 31, 37, 41, 43), (self.stacksize, self.stack_delta, hash(self.taintmap),
+                                                             hash(self.instructions), hash(self.backward_slice),
+                                                             hash(self.must_visit))))
 
     def __eq__(self, other):
         return (self.stacksize == other.stacksize and
@@ -45,11 +48,14 @@ class SlicingState(object):
                 self.taintmap == other.taintmap and
                 self.memory_taint == other.memory_taint and
                 self.backward_slice == other.backward_slice and
-                self.instructions == other.instructions)
+                self.instructions == other.instructions and
+                self.must_visit == other.must_visit)
 
     def __str__(self):
-        return 'Stacksize: %d, Underflow: %d, Delta: %d, Map: %s' % (
-            self.stacksize, self.stack_underflow, self.stack_delta, self.taintmap)
+        return 'At: %x, Stacksize: %d, Underflow: %d, Delta: %d, Map: %s, Slice: %s, Must-Visit: %s, Hash: %x' % (
+            self.instructions[-1].addr, self.stacksize, self.stack_underflow, self.stack_delta, self.taintmap,
+            ','.join('%x' % i.addr for i in self.backward_slice),
+            ','.join('%x' % x for x in self.must_visit), hash(self))
 
 
 def advance_slice(state, memory_info, loop_limit):
@@ -62,8 +68,9 @@ def advance_slice(state, memory_info, loop_limit):
     memory_taint = state.memory_taint
     backward_slice = list(state.backward_slice)
     instructions = state.instructions
-    preds = state.preds
+    bb = state.bb
     loops = state.loops
+    must_visit = state.must_visit
 
     for ins in instructions[::-1]:
         slice_candidate = False
@@ -121,18 +128,39 @@ def advance_slice(state, memory_info, loop_limit):
 
     # still taint left? trace further
     else:
-        for p in preds:
-            if loops[p] < loop_limit:
+        for p in bb.pred:
+
+            if not loops[p] < loop_limit:
+                continue
+
+            new_must_visits = []
+            for path in bb.pred_paths[p]:
+                new_must_visit = (must_visit | set(path)) - {p.start}
+                if not new_must_visit.issubset(p.ancestors):
+                    continue
+                new_must_visits.append(new_must_visit)
+
+            for new_must_visit in minimize(new_must_visits):
                 new_loops = defaultdict(int, loops)
                 new_loops[p] += 1
                 new_todo.append(
                     SlicingState(stacksize, stack_underflow, stack_delta, set(taintmap), memory_taint,
                                  list(backward_slice), p.ins,
-                                 p.pred, new_loops))
+                                 p, new_loops, new_must_visit))
     return new_results, new_todo
 
 
-def backward_slice(ins, taint_args=None, memory_info=None, loop_limit=2):
+def minimize(sets):
+    todo = sorted(sets, key=len)
+    results = []
+    while todo:
+        test_set = todo[0]
+        results.append(test_set)
+        todo = [t for t in todo[1:] if not test_set.issubset(t)]
+    return results
+
+
+def backward_slice(ins, taint_args=None, memory_info=None, loop_limit=1, must_visits=[set()]):
     if ins.ins == 0:
         return []
     if taint_args:
@@ -151,20 +179,22 @@ def backward_slice(ins, taint_args=None, memory_info=None, loop_limit=2):
     bb = ins.bb
     idx = bb.ins.index(ins)
     loops = defaultdict(int)
-    todo.append(
-        SlicingState(stacksize, stack_underflow, stack_delta, taintmap, memory_taint, backward_slice, bb.ins[:idx],
-                     bb.pred, loops))
+    for must_visit in minimize(must_visits):
+        todo.append(
+            SlicingState(stacksize, stack_underflow, stack_delta, taintmap, memory_taint, backward_slice, bb.ins[:idx],
+                         bb, loops, must_visit))
     results = []
     cache = set()
-    taintcache = set()
     while todo:
         state = todo.popleft()
-        if state in cache:
-            continue
-        cache.add(state)
-        if (state.taintmap, state.memory_taint) not in taintcache:
-            taintcache.add((state.taintmap, state.memory_taint))
-        logging.debug('Cachesize: %d\tTaint-Cachesize: %d\t(slicing %x, currently at %x)', len(cache), len(taintcache), ins.addr, state.instructions[-1].addr)
+        # if this BB can be reached via multiple paths, check if we want to cache it
+        # or whether another path already reached it with the same state
+        if len(bb.succ) > 1:
+            if state in cache:
+                logging.debug('CACHE HIT')
+                continue
+            cache.add(state)
+        logging.debug('Cachesize: %d\t(slicing %x, currently at %x)', len(cache), ins.addr, state.instructions[-1].addr)
         logging.debug('Current state: %s', state)
         new_results, new_todo = advance_slice(state, memory_info, loop_limit)
         results.extend(new_results)
