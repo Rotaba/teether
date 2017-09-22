@@ -426,6 +426,9 @@ def is_true(cond):
 
 
 def run_symbolic(program, path, code=None, state=None, ctx=None, inclusive=False):
+
+    MAX_CALLDATA_SIZE = 512
+
     state = state or SymbolicEVMState(code=code)
     storage = state.storage
     constraints = []
@@ -653,7 +656,12 @@ def run_symbolic(program, path, code=None, state=None, ctx=None, inclusive=False
                     for i in xrange(size):
                         mem[mstart + i] = calldata[dstart + i]
                 else:
-                    raise SymbolicError('Symbolic memory size @ %s' % ins)
+                    calldatasize = z3.BitVec('CALLDATASIZE', 256)
+                    constraints.append(calldatasize >= dstart+size)
+                    constraints.append(size < MAX_CALLDATA_SIZE)
+                    for i in xrange(MAX_CALLDATA_SIZE):
+                        mem[mstart + i] = z3.If(size < i, mem[mstart + i], calldata[dstart + i])
+                    # raise SymbolicError('Symbolic memory size %s @ %s' % (ins, z3.simplify(size)))
             elif op == 'CODESIZE':
                 stk.append(len(state.code))
             elif op == 'CODECOPY':
@@ -666,7 +674,7 @@ def run_symbolic(program, path, code=None, state=None, ctx=None, inclusive=False
                         else:
                             mem[mstart + i] = 0
                 else:
-                    raise SymbolicError('Symbolic memory index @ %s' % ins)
+                    raise SymbolicError('Symbolic code index @ %s' % ins)
             elif op == 'RETURNDATACOPY':
                 raise ExternalData('RETURNDATACOPY')
             elif op == 'RETURNDATASIZE':
