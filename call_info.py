@@ -6,13 +6,13 @@ import z3
 
 from ethanalyze.constraints import dependency_summary
 from ethanalyze.evm import concrete
-from ethanalyze.project import Project
+import ethanalyze.project as project
 
 logging.basicConfig(level=logging.DEBUG)
 
 
 def call_constraints(codepath):
-    p = Project.load(codepath)
+    p = project.load(codepath)
     call_ins = p.cfg.filter_ins('CALL')
     if not call_ins:
         logging.info('No CALL instructions')
