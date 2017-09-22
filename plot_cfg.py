@@ -1,6 +1,9 @@
 #!/usr/bin/env python2.7
 import sys
 
+import logging
+logging.basicConfig(level=logging.DEBUG)
+
 import ethanalyze.project
 
 if __name__ == '__main__':
