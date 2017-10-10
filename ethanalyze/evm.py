@@ -5,8 +5,30 @@ from binascii import hexlify
 from z3 import z3, is_false, is_true
 
 import utils
-from ethanalyze.z3util import add_suffix
+from .disassembly import disass
 from .memory import UninitializedRead
+from .z3util import add_suffix
+
+
+class LazyProgram(object):
+    def __init__(self, code):
+        self.code = code
+        self.ins = dict()
+
+    def __disass__(self, i):
+        for ins in disass(self.code, i):
+            self.ins[ins.addr] = ins
+
+    def __contains__(self, i):
+        if i in self.ins:
+            return True
+        self.__disass__(i)
+        return i in self.ins
+
+    def __getitem__(self, i):
+        if i in self:
+            return self.ins[i]
+        raise KeyError()
 
 
 class ExternalData(Exception):
@@ -170,10 +192,29 @@ class SymbolicEVMState(AbstractEVMState):
         return new_state
 
 
-def run(program, state=None, code=None, check_initialized=False):
+class Context(object):
+    def __init__(self):
+        self.address = 0
+        self.balance = dict()
+        self.origin = 0
+        self.caller = 0
+        self.callvalue = 0
+        self.calldata = []
+        self.gasprice = 0
+        self.coinbase = 0
+        self.timestamp = 0
+        self.number = 0
+        self.difficulty = 0
+        self.gaslimit = 0
+
+
+def run(program, state=None, code=None, ctx=None, check_initialized=False, trace=False):
+    ctx = ctx or Context()
     state = state or EVMState(code)
     state.memory.set_enforcing(check_initialized)
     while state.pc in program:
+        if trace:
+            state.trace.append(state.pc)
         ins = program[state.pc]
         opcode = ins.op
         op = ins.name
@@ -266,21 +307,29 @@ def run(program, state=None, code=None, check_initialized=False):
                 data = utils.bytearray_to_bytestr(mem[s0: s0 + s1])
                 stk.append(utils.big_endian_to_int(utils.sha3(data)))
             elif op == 'ADDRESS':
-                raise ExternalData('ADDRESS')
+                stk.append(ctx.address)
             elif op == 'BALANCE':
-                raise ExternalData('BALANCE')
+                s0 = stk.pop()
+                stk.append(ctx.balance[s0])
             elif op == 'ORIGIN':
-                raise ExternalData('ORIGIN')
+                stk.append(ctx.origin)
             elif op == 'CALLER':
-                raise ExternalData('CALLER')
+                stk.append(ctx.caller)
             elif op == 'CALLVALUE':
-                raise ExternalData('CALLVALUE')
+                stk.append(ctx.callvalue)
             elif op == 'CALLDATALOAD':
-                raise ExternalData('CALLDATALOAD')
+                s0 = stk.pop()
+                stk.append(utils.bytearray_to_int(ctx.calldata[s0:s0 + 32]))
             elif op == 'CALLDATASIZE':
-                raise ExternalData('CALLDATASIZE')
+                stk.append(len(ctx.calldata))
             elif op == 'CALLDATACOPY':
-                raise ExternalData('CALLDATACOPY')
+                mstart, dstart, size = stk.pop(), stk.pop(), stk.pop()
+                mem.extend(mstart, size)
+                for i in range(size):
+                    if dstart + i < len(ctx.calldata):
+                        mem[mstart + i] = ord(ctx.calldata[dstart + i])
+                    else:
+                        mem[mstart + i] = 0
             elif op == 'CODESIZE':
                 stk.append(len(state.code))
             elif op == 'CODECOPY':
@@ -296,7 +345,7 @@ def run(program, state=None, code=None, check_initialized=False):
             elif op == 'RETURNDATASIZE':
                 raise ExternalData('RETURNDATASIZE')
             elif op == 'GASPRICE':
-                raise ExternalData('GASPRICE')
+                stk.append(ctx.gasprice)
             elif op == 'EXTCODESIZE':
                 raise ExternalData('EXTCODESIZE')
             elif op == 'EXTCODECOPY':
@@ -306,15 +355,15 @@ def run(program, state=None, code=None, check_initialized=False):
             if op == 'BLOCKHASH':
                 raise ExternalData('BLOCKHASH')
             elif op == 'COINBASE':
-                raise ExternalData('COINBASE')
+                stk.append(ctx.coinbase)
             elif op == 'TIMESTAMP':
-                raise ExternalData('TIMESTAMP')
+                stk.append(ctx.timestamp)
             elif op == 'NUMBER':
-                raise ExternalData('NUMBER')
+                stk.append(ctx.number)
             elif op == 'DIFFICULTY':
-                raise ExternalData('DIFFICULTY')
+                stk.append(ctx.difficulty)
             elif op == 'GASLIMIT':
-                raise ExternalData('GASLIMIT')
+                stk.append(ctx.gaslimit)
         # VM state manipulations
         elif opcode < 0x60:
             if op == 'POP':
@@ -332,9 +381,11 @@ def run(program, state=None, code=None, check_initialized=False):
                 mem.extend(s0, 1)
                 mem[s0] = s1 % 256
             elif op == 'SLOAD':
-                raise ExternalData('SLOAD')
+                s0 = stk.pop()
+                stk.append(ctx.storage[s0])
             elif op == 'SSTORE':
-                raise ExternalData('SSTORE')
+                s0, s1 = stk.pop(), stk.pop()
+                ctx.storage[s0] = s1
             elif op == 'JUMP':
                 state.pc = stk.pop()
                 if state.pc >= len(state.code) or not program[state.pc].name == 'JUMPDEST':
@@ -426,7 +477,6 @@ def is_true(cond):
 
 
 def run_symbolic(program, path, code=None, state=None, ctx=None, inclusive=False):
-
     MAX_CALLDATA_SIZE = 512
 
     state = state or SymbolicEVMState(code=code)
@@ -638,7 +688,7 @@ def run_symbolic(program, path, code=None, state=None, ctx=None, inclusive=False
                 elif is_true(s0 == ctx_or_symbolic('CALLER', ctx)):
                     stk.append(ctx_or_symbolic('BALANCE-CALLER', ctx))
                 else:
-                    raise SymbolicError('balance of symblic address')
+                    raise SymbolicError('balance of symbolic address')
             elif op == 'ORIGIN':
                 stk.append(ctx_or_symbolic('ORIGIN', ctx))
             elif op == 'CALLER':
@@ -657,11 +707,10 @@ def run_symbolic(program, path, code=None, state=None, ctx=None, inclusive=False
                         mem[mstart + i] = calldata[dstart + i]
                 else:
                     calldatasize = z3.BitVec('CALLDATASIZE', 256)
-                    constraints.append(calldatasize >= dstart+size)
+                    constraints.append(calldatasize >= dstart + size)
                     constraints.append(size < MAX_CALLDATA_SIZE)
                     for i in xrange(MAX_CALLDATA_SIZE):
                         mem[mstart + i] = z3.If(size < i, mem[mstart + i], calldata[dstart + i])
-                    # raise SymbolicError('Symbolic memory size %s @ %s' % (ins, z3.simplify(size)))
             elif op == 'CODESIZE':
                 stk.append(len(state.code))
             elif op == 'CODECOPY':
