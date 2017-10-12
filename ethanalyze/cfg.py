@@ -6,6 +6,14 @@ from .memory import UninitializedRead
 from .opcodes import opcodes
 
 
+def unique(l):
+    last = None
+    for i in l:
+        if i != last:
+            yield i
+        last = i
+
+
 class Instruction(object):
     def __init__(self, addr, op, arg=None):
         opinfo = opcodes[op]
@@ -78,7 +86,7 @@ class BB(object):
         other.pred.add(self)
         self.update_descendants(other.descendants | {other.start})
         other.update_ancestors(self.ancestors | {self.start})
-        other.pred_paths[self].add(frozenset(path))
+        other.pred_paths[self].add(tuple(path))
         seen = set()
         todo = deque()
         todo.append(other)
@@ -116,7 +124,7 @@ class BB(object):
                 if succ_addr not in valid_jump_targets:
                     logging.warning('Jump to invalid address')
                     continue
-                path = frozenset(ins.bb.start for ins in b if ins.bb)
+                path = tuple(unique(ins.bb.start for ins in b if ins.bb))
                 if succ_addr not in self.succ_addrs:
                     self.succ_addrs.add(succ_addr)
                 if (path, succ_addr) not in new_succ_addrs:

@@ -4,6 +4,7 @@ from Queue import PriorityQueue
 from ethanalyze.opcodes import potentially_user_controlled
 from .cfg import Instruction
 from .intrange import Range
+from .frontierset import FrontierSet
 
 
 def slice_to_program(s):
@@ -35,7 +36,7 @@ class SlicingState(object):
         self.instructions = tuple(instructions)
         self.bb = bb
         self.gas = gas
-        self.must_visit = frozenset(must_visit)
+        self.must_visit = must_visit.copy()
 
     def __hash__(self):
         return sum(
@@ -56,7 +57,7 @@ class SlicingState(object):
         return 'At: %x, Stacksize: %d, Underflow: %d, Delta: %d, Map: %s, Slice: %s, Must-Visit: %s, Hash: %x' % (
             self.instructions[-1].addr, self.stacksize, self.stack_underflow, self.stack_delta, self.taintmap,
             ','.join('%x' % i.addr for i in self.backward_slice),
-            ','.join('%x' % x for x in self.must_visit), hash(self))
+            self.must_visit, hash(self))
 
 
 def advance_slice(state, memory_info):
@@ -133,8 +134,12 @@ def advance_slice(state, memory_info):
             for p in bb.pred:
                 new_must_visits = []
                 for path in bb.pred_paths[p]:
-                    new_must_visit = (must_visit | set(path)) - {p.start}
-                    if not new_must_visit.issubset(p.ancestors):
+                    new_must_visit = must_visit.copy()
+                    for a,b in zip(path[:-1], path[1:]):
+                        new_must_visit.add(a,b)
+                    if p.start in new_must_visit.frontier:
+                        new_must_visit.remove(p.start)
+                    if not new_must_visit.all.issubset(p.ancestors):
                         continue
                     new_must_visits.append(new_must_visit)
 
@@ -148,15 +153,13 @@ def advance_slice(state, memory_info):
 
 def minimize(sets):
     todo = sorted(sets, key=len)
-    results = []
     while todo:
         test_set = todo[0]
-        results.append(test_set)
+        yield test_set
         todo = [t for t in todo[1:] if not test_set.issubset(t)]
-    return results
 
 
-def backward_slice(ins, taint_args=None, memory_info=None, initial_gas=16, must_visits=[set()]):
+def backward_slice(ins, taint_args=None, memory_info=None, initial_gas=16, must_visits=[FrontierSet()]):
     if ins.ins == 0:
         return []
     if taint_args:
@@ -178,7 +181,7 @@ def backward_slice(ins, taint_args=None, memory_info=None, initial_gas=16, must_
     bb = ins.bb
     idx = bb.ins.index(ins)
     gas = initial_gas
-    for must_visit in minimize(must_visits):
+    for must_visit in minimize(FrontierSet(mv) if not mv is FrontierSet else mv for mv in must_visits):
         todo.put((len(must_visit),
             SlicingState(stacksize, stack_underflow, stack_delta, taintmap, memory_taint, backward_slice, bb.ins[:idx],
                          bb, gas, must_visit)))
