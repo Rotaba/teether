@@ -157,10 +157,13 @@ class BB(object):
     def __repr__(self):
         return str(self)
 
+    def __cmp__(self, other):
+        return cmp(self.start, other.start)
+
 
 class CFG(object):
     def __init__(self, bbs, fix_xrefs=True, fix_only_easy_xrefs=False):
-        self.bbs = sorted(bbs, key=lambda bb: bb.start)
+        self.bbs = sorted(bbs)
         self._bb_at = {bb.start: bb for bb in self.bbs}
         self.valid_jump_targets = frozenset({bb.start for bb in self.bbs if bb.ins[0].name == 'JUMPDEST'})
         if fix_xrefs or fix_only_easy_xrefs:
@@ -215,9 +218,9 @@ class CFG(object):
         s = 'digraph g {\n'
         s += '\tsplines=ortho;\n'
         s += '\tnode[fontname="courier"];\n'
-        for bb in sorted(self.bbs, key=lambda x: x.start):
-            from_block = 'From: ' + ', '.join('%x' % pred.start for pred in bb.pred)
-            to_block = 'To: ' + ', '.join('%x' % succ.start for succ in bb.succ)
+        for bb in sorted(self.bbs):
+            from_block = 'From: ' + ', '.join('%x' % pred.start for pred in sorted(bb.pred))
+            to_block = 'To: ' + ', '.join('%x' % succ.start for succ in sorted(bb.succ))
             ins_block = '<br align="left"/>'.join(
                 '%4x: %02x %s %s' % (ins.addr, ins.op, ins.name, hexlify(ins.arg) if ins.arg else '') for ins in bb.ins)
             # ancestors = 'Ancestors: %s'%(', '.join('%x'%addr for addr in sorted(a for a in bb.ancestors)))
@@ -227,8 +230,8 @@ class CFG(object):
             s += '\t%d [shape=box,label=<%s<br align="left"/><b>%x</b>:<br align="left"/>%s<br align="left"/>%s<br align="left"/>>];\n' % (
                 bb.start, from_block, bb.start, ins_block, to_block)
         s += '\n'
-        for bb in sorted(self.bbs, key=lambda x: x.start):
-            for succ in sorted(bb.succ, key=lambda x: x.start):
+        for bb in sorted(self.bbs):
+            for succ in sorted(bb.succ):
                 pths = succ.pred_paths[bb]
                 s += '\t%d -> %d [xlabel="%s"];\n' % (
                     bb.start, succ.start, '|'.join(' -> '.join('%x' % a for a in p) for p in pths))
