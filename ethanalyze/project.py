@@ -5,7 +5,7 @@ from collections import defaultdict
 from .cfg import CFG
 from .disassembly import generate_BBs
 from .evm import run, run_symbolic, IntractablePath, concrete, ExternalData
-from .slicing import interesting_slices, backward_slice
+from .slicing import interesting_slices
 from .slicing import slice_to_program
 
 
@@ -53,7 +53,6 @@ class Project(object):
         return run_symbolic(self.prg, path, self.code, inclusive=inclusive)
 
     def get_constraints(self, instructions, args=None, inclusive=False, predicate=None):
-
         for ins in instructions:
             if args:
                 slices = interesting_slices(ins, args)
