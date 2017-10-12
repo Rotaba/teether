@@ -52,14 +52,14 @@ class Project(object):
     def run_symbolic(self, path, inclusive=False):
         return run_symbolic(self.prg, path, self.code, inclusive=inclusive)
 
-    def get_constraints(self, instructions, args=None, inclusive=False):
+    def get_constraints(self, instructions, args=None, inclusive=False, predicate=None):
 
         for ins in instructions:
             if args:
                 slices = interesting_slices(ins, args)
                 # Check if ins.bb is set, as slices include padding instructions (PUSH, POP)
                 interesting_sub_paths = [[i.bb.start for i in bs if i.bb] for bs in slices]
-            for path in self.cfg.get_paths(ins):
+            for path in self.cfg.get_paths(ins, predicate=predicate):
                 logging.debug('Path %s', ' -> '.join('%x' % p for p in path))
                 # If this path is NOT a superset of an interesting slice, skip it
                 if args and not any(all(loc in path for loc in sub_path) for sub_path in interesting_sub_paths):

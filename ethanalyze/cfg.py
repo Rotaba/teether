@@ -240,7 +240,7 @@ class CFG(object):
         return s
 
     @staticmethod
-    def get_paths(ins, loop_limit=1):
+    def get_paths(ins, loop_limit=1, predicate=None):
         path = [ins.addr, ins.bb.start]
         loops = defaultdict(int)
         pred = ins.bb.pred
@@ -251,6 +251,9 @@ class CFG(object):
             if path[-1] == 0:
                 yield path[::-1]
             for p in pred:
+                if predicate:
+                    if not predicate(path, p):
+                        continue
                 if loops[p] < loop_limit:
                     new_path = path + [p.start]
                     new_pred = p.pred
