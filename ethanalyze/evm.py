@@ -1,5 +1,6 @@
 import copy
 import numbers
+from collections import defaultdict
 from binascii import hexlify
 
 from z3 import z3, is_false, is_true
@@ -206,6 +207,7 @@ class Context(object):
         self.number = 0
         self.difficulty = 0
         self.gaslimit = 0
+        self.storage = defaultdict(int)
 
 
 def run(program, state=None, code=None, ctx=None, check_initialized=False, trace=False):
