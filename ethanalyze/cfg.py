@@ -50,7 +50,8 @@ class BB(object):
         self.indirect_jump = self.ins[-1].op in (0x56, 0x57)
         self.ancestors = set()
         self.descendants = set()
-        # maintain a set of 'must_visit' contraints to limit backward-slices to only new slices after new egdes are added
+        # maintain a set of 'must_visit' contraints to limit
+        # backward-slices to only new slices after new egdes are added
         # initialliy, no constrain is given (= empty set)
         self.must_visit = [set()]
 

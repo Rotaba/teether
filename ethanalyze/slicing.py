@@ -1,5 +1,5 @@
 import logging
-from collections import deque, defaultdict
+from Queue import PriorityQueue
 
 from ethanalyze.opcodes import potentially_user_controlled
 from .cfg import Instruction
@@ -24,16 +24,17 @@ def adjust_stack(backward_slice, stack_delta):
 
 class SlicingState(object):
     def __init__(self, stacksize, stack_underflow, stack_delta, taintmap, memory_taint, backward_slice, instructions,
-                 bb, loops, must_visit):
+                 bb, gas, must_visit):
         self.stacksize = stacksize
         self.stack_underflow = stack_underflow
         self.stack_delta = stack_delta
         self.taintmap = frozenset(taintmap)
         self.memory_taint = memory_taint
+        # The actual slice doesn't matter that much. What matters more is the resulting EXPRESSION of the return-address
         self.backward_slice = tuple(backward_slice)
         self.instructions = tuple(instructions)
         self.bb = bb
-        self.loops = loops
+        self.gas = gas
         self.must_visit = frozenset(must_visit)
 
     def __hash__(self):
@@ -58,7 +59,7 @@ class SlicingState(object):
             ','.join('%x' % x for x in self.must_visit), hash(self))
 
 
-def advance_slice(state, memory_info, loop_limit):
+def advance_slice(state, memory_info):
     new_results = []
     new_todo = []
     stacksize = state.stacksize
@@ -69,7 +70,7 @@ def advance_slice(state, memory_info, loop_limit):
     backward_slice = list(state.backward_slice)
     instructions = state.instructions
     bb = state.bb
-    loops = state.loops
+    gas = state.gas
     must_visit = state.must_visit
 
     for ins in instructions[::-1]:
@@ -126,27 +127,22 @@ def advance_slice(state, memory_info, loop_limit):
             pass
         stack_delta += ins.delta
 
-    # still taint left? trace further
+    # still taint left? trace further if gas is still sufficient
     else:
-        for p in bb.pred:
+        if gas > 0:
+            for p in bb.pred:
+                new_must_visits = []
+                for path in bb.pred_paths[p]:
+                    new_must_visit = (must_visit | set(path)) - {p.start}
+                    if not new_must_visit.issubset(p.ancestors):
+                        continue
+                    new_must_visits.append(new_must_visit)
 
-            if not loops[p] < loop_limit:
-                continue
-
-            new_must_visits = []
-            for path in bb.pred_paths[p]:
-                new_must_visit = (must_visit | set(path)) - {p.start}
-                if not new_must_visit.issubset(p.ancestors):
-                    continue
-                new_must_visits.append(new_must_visit)
-
-            for new_must_visit in minimize(new_must_visits):
-                new_loops = defaultdict(int, loops)
-                new_loops[p] += 1
-                new_todo.append(
-                    SlicingState(stacksize, stack_underflow, stack_delta, set(taintmap), memory_taint,
-                                 list(backward_slice), p.ins,
-                                 p, new_loops, new_must_visit))
+                for new_must_visit in minimize(new_must_visits):
+                    new_todo.append(
+                        SlicingState(stacksize, stack_underflow, stack_delta, set(taintmap), memory_taint,
+                                     list(backward_slice), p.ins,
+                                     p, gas - 1, new_must_visit))
     return new_results, new_todo
 
 
@@ -160,7 +156,7 @@ def minimize(sets):
     return results
 
 
-def backward_slice(ins, taint_args=None, memory_info=None, loop_limit=1, must_visits=[set()]):
+def backward_slice(ins, taint_args=None, memory_info=None, initial_gas=16, must_visits=[set()]):
     if ins.ins == 0:
         return []
     if taint_args:
@@ -173,32 +169,36 @@ def backward_slice(ins, taint_args=None, memory_info=None, loop_limit=1, must_vi
         memory_taint = Range()
     stacksize = ins.ins
     backward_slice = []
-    todo = deque()
+    # keep tuples of (len(must_visit), state)
+    # this way, the least restricted state are preferred
+    # which should maximize caching efficiency
+    todo = PriorityQueue()
     stack_underflow = 0
     stack_delta = 0
     bb = ins.bb
     idx = bb.ins.index(ins)
-    loops = defaultdict(int)
+    gas = initial_gas
     for must_visit in minimize(must_visits):
-        todo.append(
+        todo.put((len(must_visit),
             SlicingState(stacksize, stack_underflow, stack_delta, taintmap, memory_taint, backward_slice, bb.ins[:idx],
-                         bb, loops, must_visit))
+                         bb, gas, must_visit)))
     results = []
     cache = set()
-    while todo:
-        state = todo.popleft()
+    while not todo.empty():
+        _, state = todo.get()
         # if this BB can be reached via multiple paths, check if we want to cache it
         # or whether another path already reached it with the same state
-        if len(bb.succ) > 1:
+        if len(state.bb.succ) > 1:
             if state in cache:
                 logging.debug('CACHE HIT')
                 continue
             cache.add(state)
         logging.debug('Cachesize: %d\t(slicing %x, currently at %x)', len(cache), ins.addr, state.instructions[-1].addr)
         logging.debug('Current state: %s', state)
-        new_results, new_todo = advance_slice(state, memory_info, loop_limit)
+        new_results, new_todo = advance_slice(state, memory_info)
         results.extend(new_results)
-        todo.extend(new_todo)
+        for nt in new_todo:
+            todo.put((len(nt.must_visit), nt))
 
     return results
 
