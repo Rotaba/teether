@@ -102,6 +102,8 @@ class SymbolicMemory(object):
 
     def __getitem__(self, index):
         if isinstance(index, slice):
+            if (not index.start is None and not concrete(index.start)) or not concrete(index.stop):
+                raise SymbolicError("Use mem.read for symbolic range reads")
             r = []
             for i in xrange(index.start or 0, index.stop, index.step or 1):
                 r.append(self[i])
@@ -115,6 +117,8 @@ class SymbolicMemory(object):
 
     def __setitem__(self, index, v):
         if isinstance(index, slice):
+            if (not index.start is None and not concrete(index.start)) or not concrete(index.stop):
+                raise SymbolicError("Use mem.write for symbolic range writes")
             for j, i in enumerate(xrange(index.start or 0, index.stop, index.step or 1)):
                 self[i] = v[j]
         else:
@@ -124,6 +128,26 @@ class SymbolicMemory(object):
                 self.memory = z3.Store(self.memory, index, ord(v))
             else:
                 self.memory = z3.Store(self.memory, index, v)
+
+    def read(self, start, size):
+        if concrete(start) and concrete(size):
+            return self[start:start+size]
+        elif concrete(size):
+            return [self[start+i] for i in xrange(size)]
+        else:
+            raise SymbolicError("Read of symbolic length")
+
+    def write(self, start, size, val):
+        if not concrete(size):
+            raise SymbolicError("Write of symbolic length")
+        if len(val) != size:
+            raise ValueError("value does not match length")
+        if concrete(start) and concrete(size):
+            self[start:start+size] = val
+        else: # by now we know that size is concrete
+            for i in xrange(size):
+                self[start+i] = val[i]
+
 
     def set_enforcing(self, enforcing=True):
         pass
@@ -664,7 +688,7 @@ def run_symbolic(program, path, code=None, state=None, ctx=None, inclusive=False
                     stk.append(z3.BitVec('SHA3_%x' % instruction_count, 256))
                     # raise SymbolicError('symbolic computation of SHA3 not supported')
                 mem.extend(s0, s1)
-                mm = mem[s0: s0 + s1]
+                mm = mem.read(s0, s1)
                 if all(concrete(m) for m in mm):
                     data = utils.bytearray_to_bytestr(mm)
                     stk.append(utils.big_endian_to_int(utils.sha3(data)))
@@ -770,7 +794,7 @@ def run_symbolic(program, path, code=None, state=None, ctx=None, inclusive=False
                 mem.extend(s0, 32)
                 mm = [mem[s0 + i] for i in xrange(32)]
                 if all(concrete(m) for m in mm):
-                    stk.append(utils.bytes_to_int(mem[s0: s0 + 32]))
+                    stk.append(utils.bytes_to_int(mem.read(s0, 32)))
                 else:
                     v = z3.simplify(z3.Concat([m if not concrete(m) else z3.BitVecVal(m, 8) for m in mm]))
                     if z3.is_bv_value(v):
@@ -781,7 +805,7 @@ def run_symbolic(program, path, code=None, state=None, ctx=None, inclusive=False
                 s0, s1 = stk.pop(), stk.pop()
                 mem.extend(s0, 32)
                 if concrete(s1):
-                    mem[s0: s0 + 32] = utils.encode_int32(s1)
+                    mem.write(s0, 32, utils.encode_int32(s1))
                 else:
                     for i in xrange(32):
                         m = z3.simplify(z3.Extract((31 - i) * 8 + 7, (31 - i) * 8, s1))
