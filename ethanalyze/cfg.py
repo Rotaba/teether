@@ -2,6 +2,7 @@ import logging
 from binascii import hexlify
 from collections import defaultdict, deque
 
+from .cfg_traversal import traverse_back
 from .memory import UninitializedRead
 from .opcodes import opcodes
 
@@ -249,25 +250,19 @@ class CFG(object):
 
     @staticmethod
     def get_paths(ins, loop_limit=1, predicate=None):
-        path = [ins.addr, ins.bb.start]
-        loops = defaultdict(int)
-        pred = ins.bb.pred
-        todo = list()  # deque() for BFS
-        todo.append((path, loops, pred))
-        while todo:
-            path, loops, pred = todo.pop()
-            if path[-1] == 0:
-                yield path[::-1]
-            for p in pred:
-                if predicate:
-                    if not predicate(path, p):
-                        continue
-                if loops[p] < loop_limit:
-                    new_path = path + [p.start]
-                    new_pred = p.pred
-                    new_loops = defaultdict(int, loops)
-                    new_loops[p] += 1
-                    todo.append((new_path, new_loops, new_pred))
+        initial_path = tuple([ins.addr, ins.bb.start])
+
+        def advance_data(path):
+            return path
+
+        def update_data(path, new_bb):
+            return tuple(list(path) + [new_bb.start])
+
+        def finish_path(path):
+            return path[-1] == 0
+
+        for path in traverse_back(ins, None, initial_path, advance_data, update_data, finish_path):
+            yield path[::-1]
 
     def get_successful_paths_from(self, path, loop_limit=1):
         loops = defaultdict(int)
