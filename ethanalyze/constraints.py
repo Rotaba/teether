@@ -68,7 +68,8 @@ def check_model_and_resolve(constraints, sha_constraints):
             logging.debug("Bad hashes: %s", bad_hashes)
             for h in bad_hashes:
                 logging.debug("BAD: %s: %s", h, sha_constraints[h])
-            for a, b in itertools.chain(itertools.combinations(bad_hashes, 2), itertools.product(set(sha_constraints.keys()) - bad_hashes, bad_hashes)):
+            for a, b in itertools.chain(itertools.combinations(bad_hashes, 2),
+                                        itertools.product(set(sha_constraints.keys()) - bad_hashes, bad_hashes)):
                 if sha_constraints[a].size() != sha_constraints[b].size():
                     continue
                 s = z3.Solver()
@@ -90,7 +91,7 @@ def check_model_and_resolve(constraints, sha_constraints):
 
 
 def check_and_model(constraints, sha_constraints):
-    logging.debug(' '*16 + '-' * 16)
+    logging.debug(' ' * 16 + '-' * 16)
     if not sha_constraints:
         sol = z3.Solver()
         sol.add(constraints)

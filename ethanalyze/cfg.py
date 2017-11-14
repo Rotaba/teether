@@ -190,7 +190,7 @@ class CFG(object):
         logging.debug('Easy Xrefs fixed, turning to hard ones now')
         if not fix_only_easy_xrefs:
             self._hard_xrefs()
-        logging.debug('Hard Xrefs also fixed, good to go')
+            logging.debug('Hard Xrefs also fixed, good to go')
 
     def _easy_xrefs(self):
         for pred in self.bbs:

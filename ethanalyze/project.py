@@ -79,12 +79,11 @@ class Project(object):
         self._writes = defaultdict(set)
         for store in sstore_ins:
             for bs in interesting_slices(store):
-                # TODO: Devise a better way to mark whether the last instruction of a path should be executed OR NOT
                 bs.append(store)
                 prg = slice_to_program(bs)
                 path = sorted(prg.keys())
                 try:
-                    r = run_symbolic(prg, path, self.code)
+                    r = run_symbolic(prg, path, self.code, inclusive=True)
                 except IntractablePath:
                     logging.exception('Intractable Path while analyzing writes')
                     continue
