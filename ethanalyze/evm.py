@@ -3,12 +3,13 @@ import numbers
 from collections import defaultdict
 from binascii import hexlify
 
-from z3 import z3, is_false, is_true
+from z3 import z3, is_false, is_true, z3util
+from .z3_extra_util import get_vars
 
 import utils
 from .disassembly import disass
 from .memory import UninitializedRead
-from .z3util import add_suffix
+from .z3_extra_util import add_suffix
 
 
 class LazyProgram(object):
@@ -1003,3 +1004,80 @@ class CombinedSymbolicResult(object):
     def simplify(self):
         self._constraints = [z3.simplify(c) for c in self.constraints]
         self._sha_constraints = {sha: z3.simplify(sha_value) for sha, sha_value in self.sha_constraints.items()}
+        self._constraints = [simplify_non_const_hashes(c, self.sha_constraints.keys()) for c in self.constraints]
+
+
+def simplify_non_const_hashes(expr, sha):
+    sha_ids = {e.get_id() for e in sha}
+    while True:
+        expr = z3.simplify(expr, expand_select_store=True)
+        sha_subst = get_sha_subst(expr, sha_ids)
+        if not sha_subst:
+            break
+        expr = z3.substitute(expr, [(s, z3.BoolVal(False)) for s in sha_subst])
+    return expr
+
+
+def is_simple_expr(expr):
+    '''
+        True if expr does not contain an If, Store, or Select statement
+    :param expr: the expression to check
+    :return: True, iff expr does not contain If, Store, or Select
+    '''
+
+    if expr.decl().kind() in {z3.Z3_OP_ITE, z3.Z3_OP_SELECT, z3.Z3_OP_STORE}:
+        return False
+    else:
+        return all(is_simple_expr(c) for c in expr.children())
+
+
+def ast_eq(e1, e2, simplified=False):
+    if not simplified:
+        e1 = z3.simplify(e1)
+        e2 = z3.simplify(e2)
+    if e1.sort() != e2.sort():
+        return False
+    if e1.decl().kind() != e2.decl().kind():
+        return False
+    if z3util.is_expr_val(e1) and z3util.is_expr_val(e2):
+        return e1.as_long() == e2.as_long()
+    return all(ast_eq(c1, c2, True) for c1, c2 in zip(e1.children(), e2.children()))
+
+
+def get_sha_subst(f, sha_ids, rs=None):
+    if rs is None:
+        f = z3.simplify(f, expand_select_store=True)
+        rs = set()
+
+    if f.decl().kind() == z3.Z3_OP_EQ and all(is_simple_expr(c) for c in f.children()):
+        l, r = f.children()
+        lvars, rvars = [{v.get_id() for v in get_vars(e)} for e in (l, r)]
+
+        sha_left = bool(lvars & sha_ids)
+        sha_right = bool(rvars & sha_ids)
+
+        if sha_left and sha_right:
+            # both sides use a sha-expression
+            # => can be equal only if ASTs are equal
+            if ast_eq(l, r):
+                return rs
+            else:
+                return rs | {f}
+
+        elif sha_left ^ sha_right:
+            # only one side uses a sha-expression
+            # => assume not equal (e.g. SHA == 5 seems unlikely)
+            return rs | {f}
+
+        else:
+            # no side uses a sha-expression
+            return rs
+
+    else:
+
+        # If we are not at at ==
+        # recure to children
+        for f_ in f.children():
+            rs = get_sha_subst(f_, sha_ids, rs)
+
+        return set(rs)

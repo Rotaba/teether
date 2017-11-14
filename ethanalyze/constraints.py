@@ -6,8 +6,8 @@ from collections import defaultdict
 from z3 import z3, z3util
 
 import utils
-from .evm import IntractablePath
-from .z3util import get_vars, to_bytes
+from .evm import IntractablePath, simplify_non_const_hashes
+from .z3_extra_util import get_vars, to_bytes
 
 
 class UnresolvedConstraints(Exception):
@@ -56,7 +56,8 @@ def model_to_calls(model):
 
 
 def check_model_and_resolve(constraints, sha_constraints):
-    logging.debug('-'*32)
+    constraints = [simplify_non_const_hashes(c, sha_constraints.keys()) for c in constraints]
+    logging.debug('-' * 32)
     extra_constraints = []
     while True:
         try:
@@ -110,7 +111,7 @@ def check_and_model(constraints, sha_constraints):
             else:
                 progress = True
                 sol.add(c)
-        unresolved_vars = set(v for c in new_todo for v in get_vars(c))
+        unresolved_vars = set(v.get_id() for c in new_todo for v in get_vars(c))
         logging.debug("Unresolved vars: %s", ','.join(map(str, unresolved_vars)))
         if sol.check() != z3.sat:
             raise IntractablePath()
@@ -118,7 +119,7 @@ def check_and_model(constraints, sha_constraints):
         for u in set(unresolved):
             c = sha_constraints[u]
             logging.debug("Trying to resolve %s, vars: %s", u, ','.join(map(str, get_vars(c))))
-            if any(x in unresolved_vars for x in get_vars(c)):
+            if any(x.get_id() in unresolved_vars for x in get_vars(c)):
                 continue
             v = m.eval(c)
             if z3util.is_expr_val(v):
