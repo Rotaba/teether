@@ -936,6 +936,7 @@ class SymbolicResult(object):
         self.state = state
         self.constraints = constraints
         self.sha_constraints = sha_constraints
+        self.calls = 1
 
     def simplify(self):
         self.constraints = [z3.simplify(c) for c in self.constraints]
@@ -956,6 +957,7 @@ class CombinedSymbolicResult(object):
         self._constraints = None
         self._sha_constraints = None
         self._states = None
+        self.calls = 0
 
     def _reset(self):
         self._constraints = None
@@ -976,6 +978,7 @@ class CombinedSymbolicResult(object):
                                  tr.sha_constraints.items()}
 
     def prepend(self, result):
+        self.calls += 1
         self.results = [result] + self.results
         self._reset()
 
