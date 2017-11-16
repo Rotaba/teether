@@ -49,6 +49,7 @@ def generate_BBs_recursive(code):
     resolve_later = []
     bbs = dict()
     todo = deque([(None, 0)])
+    valid_jump_targets = [i for i,c in enumerate(code) if ord(c) == 0x5b]
     while True:
         if not todo:
             new_links = False
@@ -81,7 +82,7 @@ def generate_BBs_recursive(code):
 
             bb = BB(instructions)
             bbs[bb.start] = bb
-            for s in bb.get_succ_addrs():
+            for s in bb.get_succ_addrs(valid_jump_targets):
                 # logging.info('Link from %x to %x', bb.start, s)
                 todo.append((bb.start, s))
             if not bb.jump_resolved:
