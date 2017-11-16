@@ -40,7 +40,10 @@ def model_to_calls(model):
     calls = defaultdict(dict)
     for v in model:
         name = v.name()
-        if name.startswith('CALLDATA'):
+        if name.startswith('CALLDATASIZE'):
+            #ignore for now...
+            pass
+        elif name.startswith('CALLDATA'):
             call_index = get_level(name[9:])
             calls[call_index]['payload'] = ''.join(map(chr, array_to_array(model[v])))
         elif name.startswith('CALLVALUE'):
