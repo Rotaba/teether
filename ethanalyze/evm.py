@@ -688,9 +688,6 @@ def run_symbolic(program, path, code=None, state=None, ctx=None, inclusive=False
         elif opcode < 0x40:
             if op == 'SHA3':
                 s0, s1 = stk.pop(), stk.pop()
-                if not concrete(s0) or not concrete(s1):
-                    stk.append(z3.BitVec('SHA3_%x' % instruction_count, 256))
-                    # raise SymbolicError('symbolic computation of SHA3 not supported')
                 mem.extend(s0, s1)
                 mm = mem.read(s0, s1)
                 if all(concrete(m) for m in mm):
