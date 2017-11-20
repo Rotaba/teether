@@ -1,15 +1,15 @@
 import copy
 import numbers
-from collections import defaultdict
 from binascii import hexlify
+from collections import defaultdict
 
 from z3 import z3, is_false, is_true, z3util
-from .z3_extra_util import get_vars
 
 import utils
 from .disassembly import disass
 from .memory import UninitializedRead
 from .z3_extra_util import add_suffix
+from .z3_extra_util import get_vars_non_recursive
 
 
 class LazyProgram(object):
@@ -135,11 +135,14 @@ class SymbolicMemory(object):
 
     def read(self, start, size):
         if concrete(start) and concrete(size):
-            return self[start:start+size]
+            return self[start:start + size]
         elif concrete(size):
-            return [self[start+i] for i in xrange(size)]
+            return [self[start + i] for i in xrange(size)]
         else:
-            raise SymbolicError("Read of symbolic length")
+            sym_mem = SymbolicMemory()
+            sym_mem.memory = self.memory
+            return SymRead(sym_mem, start, size)
+            # raise SymbolicError("Read of symbolic length")
 
     def write(self, start, size, val):
         if not concrete(size):
@@ -147,11 +150,10 @@ class SymbolicMemory(object):
         if len(val) != size:
             raise ValueError("value does not match length")
         if concrete(start) and concrete(size):
-            self[start:start+size] = val
-        else: # by now we know that size is concrete
+            self[start:start + size] = val
+        else:  # by now we know that size is concrete
             for i in xrange(size):
-                self[start+i] = val[i]
-
+                self[start + i] = val[i]
 
     def set_enforcing(self, enforcing=True):
         pass
@@ -163,6 +165,26 @@ class SymbolicMemory(object):
         new_memory = copy.copy(self)
         new_memory.memory = add_suffix(self.memory, level, extra_subst)
         return new_memory
+
+
+class SymRead(object):
+    def __init__(self, memory, start, size):
+        self.memory = memory
+        self.start = start
+        if not concrete(start):
+            self.start = z3.simplify(self.start)
+        self.size = size
+        if not concrete(size):
+            self.size = z3.simplify(self.size)
+
+    def translate(self, level, extra_subst):
+        new_symread = copy.copy(self)
+        new_symread.memory = self.memory.translate(level, extra_subst)
+        if not concrete(self.start):
+            new_symread.start = add_suffix(self.start, level, extra_subst)
+        if not concrete(self.size):
+            new_symread.size = add_suffix(self.size, level, extra_subst)
+        return new_symread
 
 
 class SymbolicStorage(object):
@@ -694,16 +716,23 @@ def run_symbolic(program, path, code=None, state=None, ctx=None, inclusive=False
                 s0, s1 = stk.pop(), stk.pop()
                 mem.extend(s0, s1)
                 mm = mem.read(s0, s1)
-                if all(concrete(m) for m in mm):
+                if not isinstance(mm, SymRead) and all(concrete(m) for m in mm):
                     data = utils.bytearray_to_bytestr(mm)
                     stk.append(utils.big_endian_to_int(utils.sha3(data)))
                 else:
-                    sha_data = z3.simplify(z3.Concat([m if z3.is_expr(m) else z3.BitVecVal(m, 8) for m in mm]))
-                    for k, v in sha_constraints.iteritems():
-                        if v.size() == sha_data.size() and is_true(v == sha_data):
-                            sha = k
-                            break
+                    if not isinstance(mm, SymRead):
+                        sha_data = z3.simplify(z3.Concat([m if z3.is_expr(m) else z3.BitVecVal(m, 8) for m in mm]))
+                        for k, v in sha_constraints.iteritems():
+                            if isinstance(v, SymRead):
+                                continue
+                            if v.size() == sha_data.size() and is_true(v == sha_data):
+                                sha = k
+                                break
+                        else:
+                            sha = z3.BitVec('SHA3_%x' % instruction_count, 256)
+                            sha_constraints[sha] = sha_data
                     else:
+                        sha_data = mm
                         sha = z3.BitVec('SHA3_%x' % instruction_count, 256)
                         sha_constraints[sha] = sha_data
                     stk.append(sha)
@@ -729,21 +758,21 @@ def run_symbolic(program, path, code=None, state=None, ctx=None, inclusive=False
             elif op == 'CALLDATALOAD':
                 s0 = stk.pop()
                 if not concrete(s0):
-                    constraints.append(z3.ULE(s0, MAX_CALLDATA_SIZE))
+                    constraints.append(z3.ULT(s0, MAX_CALLDATA_SIZE))
                 stk.append(z3.Concat([calldata[s0 + i] for i in xrange(32)]))
             elif op == 'CALLDATASIZE':
                 stk.append(z3.BitVec('CALLDATASIZE', 256))
             elif op == 'CALLDATACOPY':
                 mstart, dstart, size = stk.pop(), stk.pop(), stk.pop()
                 if not concrete(dstart):
-                    constraints.append(z3.ULE(dstart, MAX_CALLDATA_SIZE))
+                    constraints.append(z3.ULT(dstart, MAX_CALLDATA_SIZE))
                 if concrete(size):
                     for i in xrange(size):
                         mem[mstart + i] = calldata[dstart + i]
                 else:
                     calldatasize = z3.BitVec('CALLDATASIZE', 256)
-                    constraints.append(calldatasize >= dstart + size)
-                    constraints.append(size < MAX_CALLDATA_SIZE)
+                    constraints.append(z3.UGE(calldatasize, dstart + size))
+                    constraints.append(z3.ULT(size, MAX_CALLDATA_SIZE))
                     for i in xrange(MAX_CALLDATA_SIZE):
                         mem[mstart + i] = z3.If(size < i, mem[mstart + i], calldata[dstart + i])
             elif op == 'CODESIZE':
@@ -954,8 +983,11 @@ class SymbolicResult(object):
         subst = [(self.state.storage.history[0], storage_base)]
         new_state = self.state.translate(level, subst)
         new_constraints = [add_suffix(c, level, subst) for c in self.constraints]
-        new_sha_constraints = {add_suffix(sha, level, subst): add_suffix(sha_value, level, subst) for sha, sha_value in
-                               self.sha_constraints.items()}
+        new_sha_constraints = {add_suffix(sha, level, subst): (
+            add_suffix(sha_value, level, subst) if not isinstance(sha_value, SymRead) else sha_value.translate(level,
+                                                                                                               subst))
+            for
+            sha, sha_value in self.sha_constraints.items()}
         return SymbolicResult(new_state, new_constraints, new_sha_constraints)
 
 
@@ -1014,7 +1046,8 @@ class CombinedSymbolicResult(object):
 
     def simplify(self):
         self._constraints = [z3.simplify(c) for c in self.constraints]
-        self._sha_constraints = {sha: z3.simplify(sha_value) for sha, sha_value in self.sha_constraints.items()}
+        self._sha_constraints = {sha: (z3.simplify(sha_value) if not isinstance(sha_value, SymRead) else sha_value) for
+                                 sha, sha_value in self.sha_constraints.items()}
         self._constraints = [simplify_non_const_hashes(c, self.sha_constraints.keys()) for c in self.constraints]
 
 
@@ -1023,7 +1056,7 @@ def simplify_non_const_hashes(expr, sha):
     while True:
         expr = z3.simplify(expr, expand_select_store=True)
         sha_subst = get_sha_subst_non_recursive(expr, sha_ids)
-        #sha_subst = get_sha_subst(expr, sha_ids)
+        # sha_subst = get_sha_subst(expr, sha_ids)
         if not sha_subst:
             break
         expr = z3.substitute(expr, [(s, z3.BoolVal(False)) for s in sha_subst])
@@ -1063,7 +1096,7 @@ def get_sha_subst(f, sha_ids, rs=None):
 
     if f.decl().kind() == z3.Z3_OP_EQ and all(is_simple_expr(c) for c in f.children()):
         l, r = f.children()
-        lvars, rvars = [{v.get_id() for v in get_vars(e)} for e in (l, r)]
+        lvars, rvars = [{v.get_id() for v in get_vars_non_recursive(e, True)} for e in (l, r)]
 
         sha_left = bool(lvars & sha_ids)
         sha_right = bool(rvars & sha_ids)
@@ -1106,7 +1139,7 @@ def get_sha_subst_non_recursive(f, sha_ids):
         seen.add(expr.get_id())
         if expr.decl().kind() == z3.Z3_OP_EQ and all(is_simple_expr(c) for c in expr.children()):
             l, r = expr.children()
-            lvars, rvars = [{v.get_id() for v in get_vars(e)} for e in (l, r)]
+            lvars, rvars = [{v.get_id() for v in get_vars_non_recursive(e, True)} for e in (l, r)]
 
             sha_left = bool(lvars & sha_ids)
             sha_right = bool(rvars & sha_ids)
