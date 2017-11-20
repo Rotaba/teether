@@ -2,7 +2,7 @@ import logging
 from binascii import hexlify
 from collections import defaultdict, deque
 
-from .cfg_traversal import traverse_back
+from .cfg_back_traversal import traverse_back
 from .memory import UninitializedRead
 from .opcodes import opcodes
 

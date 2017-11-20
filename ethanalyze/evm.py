@@ -1014,7 +1014,8 @@ def simplify_non_const_hashes(expr, sha):
     sha_ids = {e.get_id() for e in sha}
     while True:
         expr = z3.simplify(expr, expand_select_store=True)
-        sha_subst = get_sha_subst(expr, sha_ids)
+        sha_subst = get_sha_subst_non_recursive(expr, sha_ids)
+        #sha_subst = get_sha_subst(expr, sha_ids)
         if not sha_subst:
             break
         expr = z3.substitute(expr, [(s, z3.BoolVal(False)) for s in sha_subst])
@@ -1084,3 +1085,36 @@ def get_sha_subst(f, sha_ids, rs=None):
             rs = get_sha_subst(f_, sha_ids, rs)
 
         return set(rs)
+
+
+def get_sha_subst_non_recursive(f, sha_ids):
+    todo = [z3.simplify(f, expand_select_store=True)]
+    rs = set()
+    seen = set()
+    while todo:
+        expr = todo.pop()
+        if expr.get_id() in seen:
+            continue
+        seen.add(expr.get_id())
+        if expr.decl().kind() == z3.Z3_OP_EQ and all(is_simple_expr(c) for c in expr.children()):
+            l, r = expr.children()
+            lvars, rvars = [{v.get_id() for v in get_vars(e)} for e in (l, r)]
+
+            sha_left = bool(lvars & sha_ids)
+            sha_right = bool(rvars & sha_ids)
+
+            if sha_left and sha_right:
+                # both sides use a sha-expression
+                # => can be equal only if ASTs are equal
+                if not ast_eq(l, r):
+                    return rs.add(expr)
+
+            elif sha_left ^ sha_right:
+                # only one side uses a sha-expression
+                # => assume not equal (e.g. SHA == 5 seems unlikely)
+                return rs.add(expr)
+
+        else:
+            todo.extend(expr.children())
+
+    return rs

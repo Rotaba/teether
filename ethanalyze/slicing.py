@@ -2,7 +2,7 @@ import logging
 
 from .opcodes import potentially_user_controlled
 from .cfg import Instruction
-from .cfg_traversal import traverse_back
+from .cfg_back_traversal import traverse_back
 from .intrange import Range
 
 
@@ -121,7 +121,7 @@ def advance_slice(slicing_state, memory_info):
                         [])
 
 
-def backward_slice(ins, taint_args=None, memory_info=None, initial_gas=8, must_visits=[]):
+def backward_slice(ins, taint_args=None, memory_info=None, initial_gas=10, must_visits=[]):
     logging.debug('backward_slice called')
     if ins.ins == 0:
         return

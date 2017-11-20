@@ -46,9 +46,27 @@ def get_vars(f, rs=set()):
         return set(rs)
 
 
+def get_vars_non_recursive(f):
+    todo = [f]
+    rs = set()
+    seen = set()
+    while todo:
+        expr = todo.pop()
+        if expr.get_id() in seen:
+            continue
+        seen.add(expr.get_id())
+        if z3.is_const(expr):
+            if not z3.z3util.is_expr_val(expr):
+                rs.add(expr)
+        else:
+            todo.extend(expr.children())
+
+    return rs
+
+
 def add_suffix(expr, level, additional_subst):
     substitutions = {k: v for k, v in additional_subst}
-    for v in z3.z3util.get_vars(expr):
+    for v in get_vars_non_recursive(expr):
         if v not in substitutions:
             if v.sort_kind() == z3.Z3_INT_SORT:
                 substitutions[v] = z3.Int('%s_%d' % (v.decl().name(), level))
