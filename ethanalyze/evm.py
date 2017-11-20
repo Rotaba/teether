@@ -600,7 +600,11 @@ def run_symbolic(program, path, code=None, state=None, ctx=None, inclusive=False
                 if concrete(base) and concrete(exponent):
                     stk.append(pow(base, exponent, utils.TT256))
                 else:
-                    raise SymbolicError('exponentiation with symbolic exponent currently not supported :-/')
+                    if concrete(base) and utils.is_pow2(base):
+                        l2 = utils.log2(base)
+                        stk.append(1 << (l2*exponent))
+                    else:
+                        raise SymbolicError('exponentiation with symbolic exponent currently not supported :-/')
             elif op == 'SIGNEXTEND':
                 s0, s1 = stk.pop(), stk.pop()
                 if concrete(s0) and concrete(s1):

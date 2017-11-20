@@ -102,6 +102,19 @@ else:
         return int.from_bytes(value, byteorder='big')
 
 
+def is_pow2(x):
+    return x and not x&(x-1)
+
+def log2(x):
+    if not is_pow2(x):
+         raise ValueError("%d is not a power of 2!"%x)
+    i = -1
+    while x:
+        x>>=1
+        i+=1
+    return i
+
+
 def ecrecover_to_pub(rawhash, v, r, s):
     if secp256k1 and hasattr(secp256k1, "PublicKey"):
         # Legendre symbol check; the secp256k1 library does not seem to do this
