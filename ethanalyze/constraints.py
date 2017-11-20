@@ -83,14 +83,14 @@ def symread_neq(a, b, MAX_SYM_READ_SIZE=512):
 
 def symread_substitute(x, subst):
     if not isinstance(x, SymRead):
-        return z3.substitute(x, subst)
+        return z3.simplify(z3.substitute(x, subst))
     else:
         new_symread = copy.copy(x)
-        new_symread.memory.memory = z3.substitute(new_symread.memory.memory, subst)
+        new_symread.memory.memory = z3.simplify(z3.substitute(new_symread.memory.memory, subst))
         if not concrete(new_symread.start):
-            new_symread.start = z3.substitute(new_symread.start, subst)
+            new_symread.start = z3.simplify(z3.substitute(new_symread.start, subst))
         if not concrete(new_symread.size):
-            new_symread.size = z3.substitute(new_symread.size, subst)
+            new_symread.size = z3.simplify(z3.substitute(new_symread.size, subst))
         return new_symread
 
 
@@ -112,7 +112,7 @@ def check_model_and_resolve(constraints, sha_constraints):
                 logging.debug("Hashes MUST be equal: %s and %s", a, b)
                 extra_constraints.append(symread_eq(sha_constraints[a], sha_constraints[b]))
                 subst = [(a, b)]
-                constraints = [z3.substitute(c, subst) for c in constraints]
+                constraints = [z3.simplify(z3.substitute(c, subst)) for c in constraints]
                 sha_constraints = {z3.substitute(sha, subst): symread_substitute(sha_value, subst) for
                                    sha, sha_value in
                                    sha_constraints.items()}

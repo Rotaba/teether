@@ -1148,12 +1148,12 @@ def get_sha_subst_non_recursive(f, sha_ids):
                 # both sides use a sha-expression
                 # => can be equal only if ASTs are equal
                 if not ast_eq(l, r):
-                    return rs.add(expr)
+                    rs.add(expr)
 
             elif sha_left ^ sha_right:
                 # only one side uses a sha-expression
                 # => assume not equal (e.g. SHA == 5 seems unlikely)
-                return rs.add(expr)
+                rs.add(expr)
 
         else:
             todo.extend(expr.children())
