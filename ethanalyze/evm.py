@@ -123,10 +123,13 @@ class SymbolicMemory(object):
             for j, i in enumerate(xrange(index.start or 0, index.stop, index.step or 1)):
                 self[i] = v[j]
         else:
+            if isinstance(v, basestring):
+                v = ord(v)
+
             if concrete(v):
-                self.memory = z3.Store(self.memory, index, v)
-            elif isinstance(v, basestring):
-                self.memory = z3.Store(self.memory, index, ord(v))
+                old_v = self[index]
+                if not concrete(old_v) or old_v != v:
+                    self.memory = z3.Store(self.memory, index, v)
             else:
                 self.memory = z3.Store(self.memory, index, v)
 
