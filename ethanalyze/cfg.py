@@ -261,7 +261,9 @@ class CFG(object):
         def finish_path(path):
             return path[-1] == 0
 
-        for path in traverse_back(ins, None, initial_path, advance_data, update_data, finish_path):
+        #for path in traverse_back(ins, None, initial_path, advance_data, update_data, finish_path):
+        #TODO: BETTER FIX TO PREVENT INFINITE LOOPS
+        for path in traverse_back(ins, 10, initial_path, advance_data, update_data, finish_path):
             yield path[::-1]
 
     def get_successful_paths_from(self, path, loop_limit=1):
