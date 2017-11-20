@@ -52,7 +52,7 @@ class Project(object):
     def run_symbolic(self, path, inclusive=False):
         return run_symbolic(self.prg, path, self.code, inclusive=inclusive)
 
-    def get_constraints(self, instructions, args=None, inclusive=False, predicate=None):
+    def get_constraints(self, instructions, args=None, inclusive=False, predicate=lambda st,pred:True):
         for ins in instructions:
             if args:
                 slices = interesting_slices(ins, args)

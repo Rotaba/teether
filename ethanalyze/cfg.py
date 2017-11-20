@@ -249,7 +249,7 @@ class CFG(object):
         return s
 
     @staticmethod
-    def get_paths(ins, loop_limit=1, predicate=None):
+    def get_paths(ins, loop_limit=1, predicate=lambda st,pred:True):
         initial_path = tuple([ins.addr, ins.bb.start])
 
         def advance_data(path):
@@ -263,7 +263,7 @@ class CFG(object):
 
         #for path in traverse_back(ins, None, initial_path, advance_data, update_data, finish_path):
         #TODO: BETTER FIX TO PREVENT INFINITE LOOPS
-        for path in traverse_back(ins, 10, initial_path, advance_data, update_data, finish_path):
+        for path in traverse_back(ins, 10, initial_path, advance_data, update_data, finish_path, predicate=predicate):
             yield path[::-1]
 
     def get_successful_paths_from(self, path, loop_limit=1):

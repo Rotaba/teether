@@ -21,7 +21,7 @@ class TraversalState(object):
         return 'At: %x, Gas: %s, Must-Visit: %s, Data: %s, Hash: %x' % (self.bb.start, self.gas, self.must_visit, self.data, hash(self))
 
 
-def generate_sucessors(state, new_data, update_data):
+def generate_sucessors(state, new_data, update_data, predicate=lambda st,pred:True):
     new_todo = []
     if state.gas is None or state.gas > 0:
         logging.debug('[tr] [gs] passed first if')
@@ -30,6 +30,8 @@ def generate_sucessors(state, new_data, update_data):
             new_gas = state.gas - 1
         logging.debug('[tr] [gs] Preds: %s', state.bb.pred)
         for p in state.bb.pred:
+            if not predicate(state.data, p):
+                continue
             new_must_visits = []
             for path in state.bb.pred_paths[p]:
                 new_must_visit = state.must_visit.copy()
@@ -47,7 +49,7 @@ def generate_sucessors(state, new_data, update_data):
     return new_todo
 
 
-def traverse_back(ins, initial_gas, initial_data, advance_data, update_data, finish_path, must_visits=[]):
+def traverse_back(ins, initial_gas, initial_data, advance_data, update_data, finish_path, must_visits=[], predicate=lambda st,p:True):
     """
 
     :param ins:
@@ -90,7 +92,7 @@ def traverse_back(ins, initial_gas, initial_data, advance_data, update_data, fin
             yield new_data
         else:
             logging.debug('[tr] continuing path (%s)', new_data)
-            new_todo = generate_sucessors(state, new_data, update_data)
+            new_todo = generate_sucessors(state, new_data, update_data, predicate=predicate)
             for nt in new_todo:
                 todo.put((len(nt.must_visit), nt))
 
