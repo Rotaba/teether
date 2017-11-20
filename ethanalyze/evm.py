@@ -727,11 +727,15 @@ def run_symbolic(program, path, code=None, state=None, ctx=None, inclusive=False
                 stk.append(ctx_or_symbolic('CALLVALUE', ctx))
             elif op == 'CALLDATALOAD':
                 s0 = stk.pop()
+                if not concrete(s0):
+                    constraints.append(z3.ULE(s0, MAX_CALLDATA_SIZE))
                 stk.append(z3.Concat([calldata[s0 + i] for i in xrange(32)]))
             elif op == 'CALLDATASIZE':
                 stk.append(z3.BitVec('CALLDATASIZE', 256))
             elif op == 'CALLDATACOPY':
                 mstart, dstart, size = stk.pop(), stk.pop(), stk.pop()
+                if not concrete(dstart):
+                    constraints.append(z3.ULE(dstart, MAX_CALLDATA_SIZE))
                 if concrete(size):
                     for i in xrange(size):
                         mem[mstart + i] = calldata[dstart + i]
