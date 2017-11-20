@@ -46,7 +46,7 @@ def get_vars(f, rs=set()):
         return set(rs)
 
 
-def get_vars_non_recursive(f):
+def get_vars_non_recursive(f, include_select=False):
     todo = [f]
     rs = set()
     seen = set()
@@ -55,7 +55,15 @@ def get_vars_non_recursive(f):
         if expr.get_id() in seen:
             continue
         seen.add(expr.get_id())
-        if z3.is_const(expr):
+        if include_select and expr.decl().kind() == z3.Z3_OP_SELECT:
+            arr, idx = expr.children()
+            if z3.is_const(arr):
+                if z3.z3util.is_expr_val(idx):
+                    rs.add(expr)
+                else:
+                    rs.add(expr)
+                    rs.add(idx)
+        elif z3.is_const(expr):
             if not z3.z3util.is_expr_val(expr):
                 rs.add(expr)
         else:
