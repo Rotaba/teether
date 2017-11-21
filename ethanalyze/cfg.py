@@ -56,6 +56,7 @@ class BB(object):
         self.succ = set()
         self.succ_addrs = set()
         self.pred_paths = defaultdict(set)
+        self.branch = self.ins[-1].op == 0x57
         self.indirect_jump = self.ins[-1].op in (0x56, 0x57)
         self.ancestors = set()
         self.descendants = set()
@@ -63,6 +64,10 @@ class BB(object):
         # backward-slices to only new slices after new egdes are added
         # initialliy, no constrain is given (= empty set)
         self.must_visit = [set()]
+        # also maintain an estimate of how fast we can get from here
+        # to the root of the cfg
+        # how fast meaning, how many JUMPI-branches we have to take
+        self.estimate = (1 if self.branch else 0) if self.start == 0 else None
 
     @property
     def jump_resolved(self):
@@ -82,11 +87,24 @@ class BB(object):
             for p in self.pred:
                 p.update_descendants(new_descendants)
 
+    def update_estimate(self):
+        if all(p.estimate is None for p in self.pred):
+            return
+        best_estimate = min(p.estimate for p in self.pred if p.estimate is not None)
+        if self.branch:
+            best_estimate += 1
+        if self.estimate is None or best_estimate < self.estimate:
+            self.estimate = best_estimate
+            for s in self.succ:
+                s.update_estimate()
+
+
     def add_succ(self, other, path):
         self.succ.add(other)
         other.pred.add(self)
         self.update_descendants(other.descendants | {other.start})
         other.update_ancestors(self.ancestors | {self.start})
+        other.update_estimate()
         other.pred_paths[self].add(tuple(path))
         seen = set()
         todo = deque()
@@ -230,6 +248,8 @@ class CFG(object):
         s += '\tnode[fontname="courier"];\n'
         for bb in sorted(self.bbs):
             from_block = 'From: ' + ', '.join('%x' % pred.start for pred in sorted(bb.pred))
+            if bb.estimate is not None:
+                from_block += '<br align="left"/>Min branches to root: %d' % bb.estimate
             to_block = 'To: ' + ', '.join('%x' % succ.start for succ in sorted(bb.succ))
             ins_block = '<br align="left"/>'.join(
                 '%4x: %02x %s %s' % (ins.addr, ins.op, ins.name, hexlify(ins.arg) if ins.arg else '') for ins in bb.ins)
@@ -249,8 +269,10 @@ class CFG(object):
         return s
 
     @staticmethod
-    def get_paths(ins, loop_limit=1, predicate=lambda st,pred:True):
-        initial_path = tuple([ins.addr, ins.bb.start])
+    def get_paths(start_ins, loop_limit=1, predicate=lambda st,pred:True):
+
+        def initial_data(ins):
+            return ins.addr, ins.bb.start
 
         def advance_data(path):
             return path
@@ -261,9 +283,8 @@ class CFG(object):
         def finish_path(path):
             return path[-1] == 0
 
-        #for path in traverse_back(ins, None, initial_path, advance_data, update_data, finish_path):
         #TODO: BETTER FIX TO PREVENT INFINITE LOOPS
-        for path in traverse_back(ins, 10, initial_path, advance_data, update_data, finish_path, predicate=predicate):
+        for path in traverse_back(start_ins, 10, initial_data, advance_data, update_data, finish_path, predicate=predicate):
             yield path[::-1]
 
     def get_successful_paths_from(self, path, loop_limit=1):
