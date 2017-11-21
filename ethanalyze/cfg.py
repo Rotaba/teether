@@ -98,7 +98,6 @@ class BB(object):
             for s in self.succ:
                 s.update_estimate()
 
-
     def add_succ(self, other, path):
         self.succ.add(other)
         other.pred.add(self)
@@ -197,6 +196,10 @@ class CFG(object):
         if fix_xrefs or fix_only_easy_xrefs:
             self._xrefs(fix_only_easy_xrefs)
 
+    @property
+    def bb_addrs(self):
+        return frozenset(self._bb_at.keys())
+
     def filter_ins(self, names):
         if isinstance(names, basestring):
             names = [names]
@@ -268,8 +271,13 @@ class CFG(object):
         s += '}'
         return s
 
+    def to_json(self):
+        return {'bbs':[{'start': bb.start,
+                           'succs': [{'start': succ.start, 'paths': list(succ.pred_paths[bb])} for succ in
+                                     sorted(bb.succ)]} for bb in sorted(self.bbs)]}
+
     @staticmethod
-    def get_paths(start_ins, loop_limit=1, predicate=lambda st,pred:True):
+    def get_paths(start_ins, loop_limit=1, predicate=lambda st, pred: True):
 
         def initial_data(ins):
             return ins.addr, ins.bb.start
@@ -283,8 +291,9 @@ class CFG(object):
         def finish_path(path):
             return path[-1] == 0
 
-        #TODO: BETTER FIX TO PREVENT INFINITE LOOPS
-        for path in traverse_back(start_ins, 10, initial_data, advance_data, update_data, finish_path, predicate=predicate):
+        # TODO: BETTER FIX TO PREVENT INFINITE LOOPS
+        for path in traverse_back(start_ins, 10, initial_data, advance_data, update_data, finish_path,
+                                  predicate=predicate):
             yield path[::-1]
 
     def get_successful_paths_from(self, path, loop_limit=1):

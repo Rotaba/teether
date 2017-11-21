@@ -43,6 +43,10 @@ class Project(object):
             self._prg = {ins.addr: ins for bb in self.cfg.bbs for ins in bb.ins}
         return self._prg
 
+    def to_json(self):
+        from binascii import hexlify
+        return {'code': hexlify(self.code), 'cfg': self.cfg.to_json()}
+
     def filter_ins(self, names):
         return self.cfg.filter_ins(names)
 
@@ -52,11 +56,12 @@ class Project(object):
     def run_symbolic(self, path, inclusive=False):
         return run_symbolic(self.prg, path, self.code, inclusive=inclusive)
 
-    def get_constraints(self, instructions, args=None, inclusive=False, predicate=lambda st,pred:True):
+    def get_constraints(self, instructions, args=None, inclusive=False, predicate=lambda st, pred: True):
         imap = {ins.addr: ins for ins in instructions}
         if args:
             # Check if ins.bb is set, as slices include padding instructions (PUSH, POP)
-            interesting_sub_paths = [[i.bb.start for i in bs if i.bb] for ins in instructions for bs in interesting_slices(ins, args)]
+            interesting_sub_paths = [[i.bb.start for i in bs if i.bb] for ins in instructions for bs in
+                                     interesting_slices(ins, args)]
         for path in self.cfg.get_paths(instructions, predicate=predicate):
             logging.debug('Path %s', ' -> '.join('%x' % p for p in path))
             # If this path is NOT a superset of an interesting slice, skip it

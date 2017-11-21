@@ -8,7 +8,7 @@ from ethanalyze.constraints import dependency_summary
 from ethanalyze.evm import concrete
 import ethanalyze.project as project
 
-logging.basicConfig(level=logging.DEBUG)
+logging.basicConfig(level=logging.INFO)
 
 
 def call_constraints(codepath):
