@@ -362,6 +362,8 @@ def run(program, state=None, code=None, ctx=None, check_initialized=False, trace
                 stk.append(ctx.address)
             elif op == 'BALANCE':
                 s0 = stk.pop()
+                if s0 not in ctx.balance:
+                    raise ExternalData('BALANCE')
                 stk.append(ctx.balance[s0])
             elif op == 'ORIGIN':
                 stk.append(ctx.origin)
@@ -527,6 +529,8 @@ def is_true(cond):
     # NOTE: This differs from `not is_false(cond)`, which corresponds to "may be true"
     return is_false(z3.Not(cond))
 
+def addr(expr):
+    return expr & (2**160 -1)
 
 def run_symbolic(program, path, code=None, state=None, ctx=None, inclusive=False):
     MAX_CALLDATA_SIZE = 512
@@ -536,6 +540,7 @@ def run_symbolic(program, path, code=None, state=None, ctx=None, inclusive=False
     constraints = []
     sha_constraints = dict()
     ctx = ctx or dict()
+    ctx['CODESIZE-ADDRESS'] = len(code)
     calldata = z3.Array('CALLDATA', z3.BitVecSort(256), z3.BitVecSort(8))
     instruction_count = 0
     while state.pc in program:
@@ -743,12 +748,12 @@ def run_symbolic(program, path, code=None, state=None, ctx=None, inclusive=False
                 s0 = stk.pop()
                 if concrete(s0):
                     stk.append(ctx_or_symbolic('BALANCE-%x' % s0, ctx))
-                elif is_true(s0 == ctx_or_symbolic('ADDRESS', ctx)):
+                elif is_true(s0 == addr(ctx_or_symbolic('ADDRESS', ctx))):
                     stk.append(ctx_or_symbolic('BALANCE-ADDRESS', ctx))
-                elif is_true(s0 == ctx_or_symbolic('CALLER', ctx)):
+                elif is_true(s0 == addr(ctx_or_symbolic('CALLER', ctx))):
                     stk.append(ctx_or_symbolic('BALANCE-CALLER', ctx))
                 else:
-                    raise SymbolicError('balance of symbolic address')
+                    raise SymbolicError('balance of symbolic address (%s)'%str(z3.simplify(s0)))
             elif op == 'ORIGIN':
                 stk.append(ctx_or_symbolic('ORIGIN', ctx))
             elif op == 'CALLER':
@@ -798,9 +803,9 @@ def run_symbolic(program, path, code=None, state=None, ctx=None, inclusive=False
                 s0 = stk.pop()
                 if concrete(s0):
                     stk.append(ctx_or_symbolic('CODESIZE-%x' % s0, ctx))
-                elif is_true(s0 == ctx_or_symbolic('ADDRESS', ctx)):
+                elif is_true(s0 == addr(ctx_or_symbolic('ADDRESS', ctx))):
                     stk.append(ctx_or_symbolic('CODESIZE-ADDRESS', ctx))
-                elif is_true(s0 == ctx_or_symbolic('CALLER', ctx)):
+                elif is_true(s0 == addr(ctx_or_symbolic('CALLER', ctx))):
                     stk.append(ctx_or_symbolic('CODESIZE-CALLER', ctx))
                 else:
                     raise SymbolicError('codesize of symblic address')
