@@ -58,8 +58,10 @@ def model_to_calls(model):
 
     return [v for k, v in sorted(calls.iteritems())]
 
+#MAX_SYM_READ_SIZE = 512
+MAX_SYM_READ_SIZE = 256
 
-def symread_eq(a, b, MAX_SYM_READ_SIZE=512):
+def symread_eq(a, b, size=MAX_SYM_READ_SIZE):
     if not isinstance(a, SymRead) and not isinstance(b, SymRead):
         if a.size() != b.size():
             return z3.BoolVal(False)
@@ -69,7 +71,7 @@ def symread_eq(a, b, MAX_SYM_READ_SIZE=512):
         # both have symbolic size
         return z3.And(a.size == b.size,
                       *(z3.If(z3.ULT(i, a.size), a.memory[a.start + i] == b.memory[b.start + i], True) for i in
-                        xrange(MAX_SYM_READ_SIZE)))
+                        xrange(size)))
     else:
         if isinstance(b, SymRead):
             # ensure that a is the one with symbolic size
@@ -77,8 +79,8 @@ def symread_eq(a, b, MAX_SYM_READ_SIZE=512):
         return z3.And(a.size == (b.size() // 8), z3.Concat(*a.memory.read(a.start, b.size() // 8)) == b)
 
 
-def symread_neq(a, b, MAX_SYM_READ_SIZE=512):
-    return z3.Not(symread_eq(a, b, MAX_SYM_READ_SIZE))
+def symread_neq(a, b, size=MAX_SYM_READ_SIZE):
+    return z3.Not(symread_eq(a, b, size))
 
 
 def symread_substitute(x, subst):

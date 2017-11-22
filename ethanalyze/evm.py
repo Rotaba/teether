@@ -529,11 +529,14 @@ def is_true(cond):
     # NOTE: This differs from `not is_false(cond)`, which corresponds to "may be true"
     return is_false(z3.Not(cond))
 
+
 def addr(expr):
-    return expr & (2**160 -1)
+    return expr & (2 ** 160 - 1)
+
 
 def run_symbolic(program, path, code=None, state=None, ctx=None, inclusive=False):
-    MAX_CALLDATA_SIZE = 512
+    # MAX_CALLDATA_SIZE = 512
+    MAX_CALLDATA_SIZE = 256
 
     state = state or SymbolicEVMState(code=code)
     storage = state.storage
