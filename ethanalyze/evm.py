@@ -213,12 +213,14 @@ class AbstractEVMState(object):
         self.stack = Stack()
         self.memory = None
         self.trace = list()
+        self.gas = None
 
 
 class EVMState(AbstractEVMState):
-    def __init__(self, code=None):
+    def __init__(self, code=None, gas=0):
         super(EVMState, self).__init__(code)
         self.memory = Memory()
+        self.gas = gas
 
 
 class SymbolicEVMState(AbstractEVMState):
@@ -226,12 +228,14 @@ class SymbolicEVMState(AbstractEVMState):
         super(SymbolicEVMState, self).__init__(code)
         self.memory = SymbolicMemory()
         self.storage = SymbolicStorage()
+        self.gas = z3.BitVec('GAS', 256)
 
     def translate(self, level, extra_subst):
         new_state = copy.copy(self)
         new_state.memory = self.memory.translate(level, extra_subst)
         new_state.storage = self.storage.translate(level, extra_subst)
         new_state.stack = [s if concrete(s) else add_suffix(s, level, extra_subst) for s in self.stack]
+        new_state.gas = add_suffix(self.gas, level, extra_subst)
         return new_state
 
     def rebase(self, storage):
@@ -457,7 +461,7 @@ def run(program, state=None, code=None, ctx=None, check_initialized=False, trace
             elif op == 'MSIZE':
                 stk.append(len(mem))
             elif op == 'GAS':
-                raise ExternalData('GAS')
+                stk.append(state.gas)
         # DUPn (eg. DUP1: a b c -> a b c c, DUP3: a b c -> a b c a)
         elif op[:3] == 'DUP':
             stk.append(stk[0x7f - opcode])  # 0x7f - opcode is a negative number, -1 for 0x80 ... -16 for 0x8f
@@ -563,6 +567,7 @@ def run_symbolic(program, path, code=None, state=None, ctx=None, inclusive=False
         op = ins.name
         stk = state.stack
         mem = state.memory
+        state.gas -= ins.gas
         # Valid operations
         # Pushes first because they are very frequent
         if 0x60 <= opcode <= 0x7f:

@@ -26,6 +26,7 @@ class Instruction(object):
         self.arg = arg
         self.ins = opinfo[1]
         self.outs = opinfo[2]
+        self.gas = opinfo[3]
         self.delta = self.outs - self.ins
         self.bb = None
 
