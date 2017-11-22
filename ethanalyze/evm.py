@@ -957,9 +957,8 @@ def run_symbolic(program, path, code=None, state=None, ctx=None, inclusive=False
         # Return opcode
         elif op == 'RETURN':
             s0, s1 = stk.pop(), stk.pop()
-            if not concrete(s0) or not concrete(s1):
-                raise SymbolicError('symbolic memory index')
-            mem.extend(s0, s1)
+            if concrete(s0) and concrete(s1):
+                mem.extend(s0, s1)
             state.success = True
             if path:
                 raise IntractablePath()
