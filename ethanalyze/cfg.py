@@ -277,6 +277,23 @@ class CFG(object):
                                      sorted(bb.succ)]} for bb in sorted(self.bbs)]}
 
     @staticmethod
+    def from_json(json_dict, code):
+        from disassembly import disass
+        bbs = list()
+        for bb_dict in json_dict['bbs']:
+            bbs.append(BB(list(disass(code, bb_dict['start']))))
+        cfg = CFG(bbs, fix_xrefs=False)
+        for bb_dict in json_dict['bbs']:
+            bb = cfg._bb_at[bb_dict['start']]
+            for succ_dict in bb_dict['succs']:
+                succ = cfg._bb_at[succ_dict['start']]
+                for path in succ_dict['paths']:
+                    bb.add_succ(succ, path)
+        return cfg
+
+
+
+    @staticmethod
     def get_paths(start_ins, loop_limit=1, predicate=lambda st, pred: True):
 
         def initial_data(ins):

@@ -47,6 +47,13 @@ class Project(object):
         from binascii import hexlify
         return {'code': hexlify(self.code), 'cfg': self.cfg.to_json()}
 
+    @staticmethod
+    def from_json(json_dict):
+        code = unhexlify(json_dict['code'])
+        cfg = CFG.from_json(json_dict['cfg'], code)
+        return Project(code, cfg)
+
+
     def filter_ins(self, names):
         return self.cfg.filter_ins(names)
 
