@@ -103,7 +103,9 @@ class SymbolicMemory(object):
 
     def __getitem__(self, index):
         if isinstance(index, slice):
-            if (not index.start is None and not concrete(index.start)) or not concrete(index.stop):
+            if index.stop is None:
+                raise ValueError("Need upper memory address!")
+            if (index.start is not None and not concrete(index.start)) or not concrete(index.stop):
                 raise SymbolicError("Use mem.read for symbolic range reads")
             r = []
             for i in xrange(index.start or 0, index.stop, index.step or 1):
@@ -118,7 +120,9 @@ class SymbolicMemory(object):
 
     def __setitem__(self, index, v):
         if isinstance(index, slice):
-            if (not index.start is None and not concrete(index.start)) or not concrete(index.stop):
+            if index.stop is None:
+                raise ValueError("Need upper memory address!")
+            if (index.start is not None and not concrete(index.start)) or not concrete(index.stop):
                 raise SymbolicError("Use mem.write for symbolic range writes")
             for j, i in enumerate(xrange(index.start or 0, index.stop, index.step or 1)):
                 self[i] = v[j]
@@ -637,7 +641,7 @@ def run_symbolic(program, path, code=None, state=None, ctx=None, inclusive=False
                 else:
                     if concrete(base) and utils.is_pow2(base):
                         l2 = utils.log2(base)
-                        stk.append(1 << (l2*exponent))
+                        stk.append(1 << (l2 * exponent))
                     else:
                         raise SymbolicError('exponentiation with symbolic exponent currently not supported :-/')
             elif op == 'SIGNEXTEND':
@@ -761,7 +765,7 @@ def run_symbolic(program, path, code=None, state=None, ctx=None, inclusive=False
                 elif is_true(s0 == addr(ctx_or_symbolic('CALLER', ctx))):
                     stk.append(ctx_or_symbolic('BALANCE-CALLER', ctx))
                 else:
-                    raise SymbolicError('balance of symbolic address (%s)'%str(z3.simplify(s0)))
+                    raise SymbolicError('balance of symbolic address (%s)' % str(z3.simplify(s0)))
             elif op == 'ORIGIN':
                 stk.append(ctx_or_symbolic('ORIGIN', ctx))
             elif op == 'CALLER':
