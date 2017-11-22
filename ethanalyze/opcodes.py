@@ -152,3 +152,6 @@ storage_reads = {'SLOAD': -1}
 
 potentially_user_controlled = ['ORIGIN', 'CALLER', 'CALLVALUE', 'CALLDATALOAD', 'CALLDATASIZE', 'CALLDATACOPY',
                                'EXTCODESIZE', 'EXTCODECOPY', 'MLOAD', 'SLOAD']
+
+external_data = ['CREATE', 'CALL', 'CALLCODE', 'DELEGATECALL', 'STATICCALL', 'SUICIDE', 'RETURNDATACOPY',
+                 'RETURNDATASIZE', 'EXTCODESIZE', 'EXTCODECOPY', 'BLOCKHASH']
