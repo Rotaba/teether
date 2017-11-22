@@ -1040,13 +1040,13 @@ class CombinedSymbolicResult(object):
 
     @property
     def constraints(self):
-        if not self._constraints:
+        if self._constraints is None:
             self._combine()
         return self._constraints
 
     @property
     def sha_constraints(self):
-        if not self._sha_constraints:
+        if self._sha_constraints is None:
             self._combine()
         return self._sha_constraints
 
