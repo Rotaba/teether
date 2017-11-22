@@ -53,7 +53,6 @@ class Project(object):
         cfg = CFG.from_json(json_dict['cfg'], code)
         return Project(code, cfg)
 
-
     def filter_ins(self, names):
         return self.cfg.filter_ins(names)
 
@@ -63,12 +62,18 @@ class Project(object):
     def run_symbolic(self, path, inclusive=False):
         return run_symbolic(self.prg, path, self.code, inclusive=inclusive)
 
-    def get_constraints(self, instructions, args=None, inclusive=False, predicate=lambda st, pred: True):
+    def get_constraints(self, instructions, args=None, inclusive=False, predicate=lambda path, pred: True):
         imap = {ins.addr: ins for ins in instructions}
         if args:
             # Check if ins.bb is set, as slices include padding instructions (PUSH, POP)
             interesting_sub_paths = [[i.bb.start for i in bs if i.bb] for ins in instructions for bs in
                                      interesting_slices(ins, args)]
+            # Update predicate to check that a full sub_path is contained in the current path
+            old_pred = predicate
+            def predicate(path, pred):
+                if not old_pred(path, pred):
+                    return False
+                return any((set(path) | {pred.start} | pred.ancestors).issuperset(sub_path) for sub_path in interesting_sub_paths)
         for path in self.cfg.get_paths(instructions, predicate=predicate):
             logging.debug('Path %s', ' -> '.join('%x' % p for p in path))
             # If this path is NOT a superset of an interesting slice, skip it

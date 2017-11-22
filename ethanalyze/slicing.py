@@ -133,14 +133,14 @@ def backward_slice(ins, taint_args=None, memory_info=None, initial_gas=10, must_
         memory_taint = memory_info[ins].reads
     else:
         memory_taint = Range()
-    stacksize = ins.ins
-    backward_slice = []
-    stack_underflow = 0
-    stack_delta = 0
-    idx = ins.bb.ins.index(ins)
 
     def initial_data(ins):
-        return SlicingState(stacksize, stack_underflow, stack_delta, taintmap, memory_taint, backward_slice,
+        stacksize = ins.ins
+        slice = []
+        stack_underflow = 0
+        stack_delta = 0
+        idx = ins.bb.ins.index(ins)
+        return SlicingState(stacksize, stack_underflow, stack_delta, taintmap, memory_taint, slice,
                                  ins.bb.ins[:idx])
 
     def advance_data(slicing_state):
@@ -156,7 +156,6 @@ def backward_slice(ins, taint_args=None, memory_info=None, initial_gas=10, must_
 
     logging.debug('Before loop')
     return [r.backward_slice[::-1] for r in traverse_back([ins], initial_gas, initial_data, advance_data, update_data, finish_path, must_visits)]
-
 
 
 def interesting_slices(instruction, args=None):
