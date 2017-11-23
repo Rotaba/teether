@@ -68,7 +68,10 @@ class BB(object):
         # also maintain an estimate of how fast we can get from here
         # to the root of the cfg
         # how fast meaning, how many JUMPI-branches we have to take
-        self.estimate = (1 if self.branch else 0) if self.start == 0 else None
+        self.estimate_constraints = (1 if self.branch else 0) if self.start == 0 else None
+        # and another estimate fo many backwards branches
+        # we will encouter to the root
+        self.estimate_back_branches = 0 if self.start == 0 else None
 
     @property
     def jump_resolved(self):
@@ -88,23 +91,35 @@ class BB(object):
             for p in self.pred:
                 p.update_descendants(new_descendants)
 
-    def update_estimate(self):
-        if all(p.estimate is None for p in self.pred):
+    def update_estimate_constraints(self):
+        if all(p.estimate_constraints is None for p in self.pred):
             return
-        best_estimate = min(p.estimate for p in self.pred if p.estimate is not None)
+        best_estimate = min(p.estimate_constraints for p in self.pred if p.estimate_constraints is not None)
         if self.branch:
             best_estimate += 1
-        if self.estimate is None or best_estimate < self.estimate:
-            self.estimate = best_estimate
+        if self.estimate_constraints is None or best_estimate < self.estimate_constraints:
+            self.estimate_constraints = best_estimate
             for s in self.succ:
-                s.update_estimate()
+                s.update_estimate_constraints()
+
+    def update_estimate_back_branches(self):
+        if all(p.estimate_back_branches is None for p in self.pred):
+            return
+        best_estimate = min(p.estimate_back_branches for p in self.pred if p.estimate_back_branches is not None)
+        if len(self.pred)>1:
+            best_estimate += 1
+        if self.estimate_back_branches is None or best_estimate != self.estimate_back_branches:
+            self.estimate_back_branches = best_estimate
+            for s in self.succ:
+                s.update_estimate_back_branches()
 
     def add_succ(self, other, path):
         self.succ.add(other)
         other.pred.add(self)
         self.update_descendants(other.descendants | {other.start})
         other.update_ancestors(self.ancestors | {self.start})
-        other.update_estimate()
+        other.update_estimate_constraints()
+        other.update_estimate_back_branches()
         other.pred_paths[self].add(tuple(path))
         seen = set()
         todo = deque()
@@ -252,8 +267,10 @@ class CFG(object):
         s += '\tnode[fontname="courier"];\n'
         for bb in sorted(self.bbs):
             from_block = 'From: ' + ', '.join('%x' % pred.start for pred in sorted(bb.pred))
-            if bb.estimate is not None:
-                from_block += '<br align="left"/>Min branches to root: %d' % bb.estimate
+            if bb.estimate_constraints is not None:
+                from_block += '<br align="left"/>Min constraints from root: %d' % bb.estimate_constraints
+            if bb.estimate_back_branches is not None:
+                from_block += '<br align="left"/>Min back branches to root: %d' % bb.estimate_back_branches
             to_block = 'To: ' + ', '.join('%x' % succ.start for succ in sorted(bb.succ))
             ins_block = '<br align="left"/>'.join(
                 '%4x: %02x %s %s' % (ins.addr, ins.op, ins.name, hexlify(ins.arg) if ins.arg else '') for ins in bb.ins)
