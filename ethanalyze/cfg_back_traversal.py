@@ -1,5 +1,6 @@
 import logging
 from Queue import PriorityQueue
+from collections import defaultdict
 
 from .frontierset import FrontierSet
 
@@ -19,10 +20,10 @@ class TraversalState(object):
         estimate given by the next BB to visit (self.bb.estimate)
         :return: estimated distance to root
         """
-        if self.bb.estimate is None:
+        if self.bb.estimate_constraints is None:
             return self.cost
         else:
-            return self.cost + self.bb.estimate
+            return self.cost + self.bb.estimate_constraints
 
     def rank(self):
         """
@@ -104,6 +105,7 @@ def traverse_back(start_ins, initial_gas, initial_data, advance_data, update_dat
             todo.put((ts.rank(), ts))
 
     cache = set()
+    ended_prematurely = defaultdict(int)
     while not todo.empty():
         _, state = todo.get()
         # if this BB can be reached via multiple paths, check if we want to cache it
@@ -120,10 +122,21 @@ def traverse_back(start_ins, initial_gas, initial_data, advance_data, update_dat
             logging.debug('[tr] finished path (%s)', new_data)
             yield new_data
         else:
-            logging.debug('[tr] continuing path (%s)', new_data)
-            new_todo = generate_sucessors(state, new_data, update_data, predicate=predicate)
-            for nt in new_todo:
-                todo.put((nt.rank(), nt))
+            if state.gas == 0:
+                ended_prematurely[state.bb.start] += 1
+            elif state.gas < state.bb.estimate_back_branches:
+                logging.info("State %s has no chance to reach root", state)
+                ended_prematurely[state.bb.start] += 1
+            else:
+                logging.debug('[tr] continuing path (%s)', new_data)
+                new_todo = generate_sucessors(state, new_data, update_data, predicate=predicate)
+                for nt in new_todo:
+                    todo.put((nt.rank(), nt))
+    total_ended = sum(ended_prematurely.values())
+    if total_ended:
+        logging.info("%d paths that ended prematurely due to branches: %s", total_ended, ', '.join('%x: %d'%(k,v) for k,v in ended_prematurely.iteritems()))
+    else:
+        logging.info("Finished all paths")
 
 
 def minimize(must_visits):
