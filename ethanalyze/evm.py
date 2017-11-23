@@ -950,10 +950,15 @@ def run_symbolic(program, path, code=None, state=None, ctx=None, inclusive=False
             # Ignore external effects...
         # Create a new contract
         elif op == 'CREATE':
-            raise ExternalData('CREATE')
+            s0, s1, s2 = stk.pop(), stk.pop(), stk.pop()
+            stk.append(addr(z3.BitVec('CREATE_%d'%instruction_count, 256)))
         # Calls
-        elif op in ('CALL', 'CALLCODE', 'DELEGATECALL', 'STATICCALL'):
-            raise ExternalData(op)
+        elif op in ('CALL', 'CALLCODE'):
+            s0, s1, s2, s3, s4, s5, s6 = stk.pop(), stk.pop(), stk.pop(), stk.pop(), stk.pop(), stk.pop(), stk.pop()
+            stk.append(z3.BitVec('CALLRESULT_%d'%instruction_count, 256))
+        elif op in ('DELEGATECALL', 'STATICCALL'):
+            s0, s1, s2, s3, s4, s5 = stk.pop(), stk.pop(), stk.pop(), stk.pop(), stk.pop(), stk.pop()
+            stk.append(z3.BitVec('CALLRESULT_%d' % instruction_count, 256))
         # Return opcode
         elif op == 'RETURN':
             s0, s1 = stk.pop(), stk.pop()
@@ -974,7 +979,11 @@ def run_symbolic(program, path, code=None, state=None, ctx=None, inclusive=False
             return SymbolicResult(state, constraints, sha_constraints)
         # SUICIDE opcode (also called SELFDESTRUCT)
         elif op == 'SUICIDE':
-            raise ExternalData('SUICIDE')
+            s0 = stk.pop()
+            state.success = True
+            if path:
+                raise IntractablePath()
+            return SymbolicResult(state, constraints, sha_constraints)
 
         state.pc += 1
 
