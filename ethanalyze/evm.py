@@ -1070,14 +1070,13 @@ class CombinedSymbolicResult(object):
         return self.states[-1]
 
     def simplify(self):
-        self._constraints = [z3.simplify(c) for c in self.constraints]
         self._sha_constraints = {sha: (z3.simplify(sha_value) if not isinstance(sha_value, SymRead) else sha_value) for
                                  sha, sha_value in self.sha_constraints.items()}
-        self._constraints = [simplify_non_const_hashes(c, self.sha_constraints.keys()) for c in self.constraints]
+        sha_ids = {e.get_id() for e in self.sha_constraints.keys()}
+        self._constraints = [simplify_non_const_hashes(c, sha_ids) for c in self.constraints]
 
 
-def simplify_non_const_hashes(expr, sha):
-    sha_ids = {e.get_id() for e in sha}
+def simplify_non_const_hashes(expr, sha_ids):
     while True:
         expr = z3.simplify(expr, expand_select_store=True)
         sha_subst = get_sha_subst_non_recursive(expr, sha_ids)

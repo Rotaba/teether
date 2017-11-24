@@ -97,8 +97,9 @@ def symread_substitute(x, subst):
 
 
 def check_model_and_resolve(constraints, sha_constraints):
-    constraints = [simplify_non_const_hashes(c, sha_constraints.keys()) for c in constraints]
-    logging.debug('-' * 32)
+    sha_ids = {sha.get_id() for sha in sha_constraints.keys()}
+    constraints = [simplify_non_const_hashes(c, sha_ids) for c in constraints]
+    #logging.debug('-' * 32)
     extra_constraints = []
 
     while True:
@@ -141,17 +142,19 @@ def check_and_model(constraints, sha_constraints):
     sol = z3.Solver()
     todo = constraints
     progress = True
+    all_vars = dict()
     while todo and progress:
         new_todo = []
         progress = False
         for c in todo:
-            if any(x in unresolved for x in get_vars_non_recursive(c, True)):
+            all_vars[c] = get_vars_non_recursive(c, True)
+            if any(x in unresolved for x in all_vars[c]):
                 new_todo.append(c)
             else:
                 progress = True
                 sol.add(c)
-        unresolved_vars = set(v.get_id() for c in new_todo for v in get_vars_non_recursive(c, True))
-        logging.debug("Unresolved vars: %s", ','.join(map(str, unresolved_vars)))
+        unresolved_vars = set(v.get_id() for c in new_todo for v in all_vars[c])
+        #logging.debug("Unresolved vars: %s", ','.join(map(str, unresolved_vars)))
         if sol.check() != z3.sat:
             raise IntractablePath()
         m = sol.model()
