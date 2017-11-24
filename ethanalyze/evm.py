@@ -1,9 +1,10 @@
 import copy
+import logging
 import numbers
 from binascii import hexlify
 from collections import defaultdict
 
-from z3 import z3, is_false, is_true, z3util
+from z3 import z3, z3util
 
 import utils
 from .disassembly import disass
@@ -951,15 +952,37 @@ def run_symbolic(program, path, code=None, state=None, ctx=None, inclusive=False
         # Create a new contract
         elif op == 'CREATE':
             s0, s1, s2 = stk.pop(), stk.pop(), stk.pop()
-            stk.append(addr(z3.BitVec('CREATE_%d'%instruction_count, 256)))
+            stk.append(addr(z3.BitVec('EXT_CREATE_%d' % instruction_count, 256)))
         # Calls
-        elif op in ('CALL', 'CALLCODE'):
-            s0, s1, s2, s3, s4, s5, s6 = stk.pop(), stk.pop(), stk.pop(), stk.pop(), stk.pop(), stk.pop(), stk.pop()
-            stk.append(z3.BitVec('CALLRESULT_%d'%instruction_count, 256))
-        elif op in ('DELEGATECALL', 'STATICCALL'):
-            s0, s1, s2, s3, s4, s5 = stk.pop(), stk.pop(), stk.pop(), stk.pop(), stk.pop(), stk.pop()
-            stk.append(z3.BitVec('CALLRESULT_%d' % instruction_count, 256))
-        # Return opcode
+        elif op in ('CALL', 'CALLCODE', 'DELEGATECALL', 'STATICCALL'):
+            if op in ('CALL', 'CALLCODE'):
+                s0, s1, s2, s3, s4, s5, s6 = stk.pop(), stk.pop(), stk.pop(), stk.pop(), stk.pop(), stk.pop(), stk.pop()
+            elif op == 'DELEGATECALL':
+                s0, s1, s3, s4, s5, s6 = stk.pop(), stk.pop(), stk.pop(), stk.pop(), stk.pop(), stk.pop(), stk.pop()
+                s2 = ctx_or_symbolic('CALLVALUE', ctx)
+            elif op == 'STATICCALL':
+                s0, s1, s3, s4, s5, s6 = stk.pop(), stk.pop(), stk.pop(), stk.pop(), stk.pop(), stk.pop(), stk.pop()
+                s2 = 0
+
+            if not concrete(s6):
+                raise SymbolicError("Symbolic return-buffer length in %s", op)
+
+            ostart = s5 if concrete(s5) else z3.simplify(s5)
+            olen = s6
+
+            if concrete(s1) and s1 == 4:
+                logging.info("Calling precompiled identity contract")
+                istart = s3 if concrete(s3) else z3.simplify(s3)
+                for i in xrange(olen):
+                    mem[ostart+i] = mem[istart+i]
+                else:
+                    raise SymbolicError("Precompiled contract %d not implemented", s1)
+            else:
+                for i in xrange(olen):
+                    mem[ostart+i] = z3.BitVec('EXT_%d_%d'%(instruction_count, i))
+
+            # assume call succeeded
+            stk.append(1)
         elif op == 'RETURN':
             s0, s1 = stk.pop(), stk.pop()
             if concrete(s0) and concrete(s1):
