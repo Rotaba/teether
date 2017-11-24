@@ -29,29 +29,25 @@ def array_to_array(array_model, length=0):
 
 def get_level(name):
     try:
-        if '_' in name:
-            return int(name[name.rfind('_') + 1:])
-        else:
-            return int(name)
+        return int(name[name.rfind('_') + 1:])
     except:
         return 0
 
 
-def model_to_calls(model):
+def model_to_calls(model, num_calls=1):
     calls = defaultdict(dict)
     for v in model:
         name = v.name()
+        #call_index = ((num_calls-1) - get_level(name))
+        call_index = get_level(name)
         if name.startswith('CALLDATASIZE'):
             # ignore for now...
             pass
         elif name.startswith('CALLDATA'):
-            call_index = get_level(name[9:])
             calls[call_index]['payload'] = ''.join(map(chr, array_to_array(model[v])))
         elif name.startswith('CALLVALUE'):
-            call_index = get_level(name[10:])
             calls[call_index]['value'] = model[v].as_long()
         elif name.startswith('CALLER'):
-            call_index = get_level(name[7:])
             calls[call_index]['caller'] = model[v].as_long()
         else:
             logging.warning('CANNOT CONVERT %s', name)
@@ -110,9 +106,9 @@ def check_model_and_resolve(constraints, sha_constraints):
             s = z3.Solver()
             s.add(constraints + extra_constraints + [a != b, symread_neq(sha_constraints[a], sha_constraints[b])])
             check_result = s.check()
-            logging.debug("Checking hashes %s and %s: %s", a, b, check_result)
+            #logging.debug("Checking hashes %s and %s: %s", a, b, check_result)
             if check_result == z3.unsat:
-                logging.debug("Hashes MUST be equal: %s and %s", a, b)
+                #logging.debug("Hashes MUST be equal: %s and %s", a, b)
                 extra_constraints.append(symread_eq(sha_constraints[a], sha_constraints[b]))
                 subst = [(a, b)]
                 constraints = [z3.simplify(z3.substitute(c, subst)) for c in constraints]
@@ -121,7 +117,8 @@ def check_model_and_resolve(constraints, sha_constraints):
                                    sha_constraints.items()}
                 break
             else:
-                logging.debug("Hashes COULD be equal: %s and %s", a, b)
+                #logging.debug("Hashes COULD be equal: %s and %s", a, b)
+                pass
         else:
             break
 
@@ -130,7 +127,7 @@ def check_model_and_resolve(constraints, sha_constraints):
 
 
 def check_and_model(constraints, sha_constraints):
-    logging.debug(' ' * 16 + '-' * 16)
+    #logging.debug(' ' * 16 + '-' * 16)
     if not sha_constraints:
         sol = z3.Solver()
         sol.add(constraints)
@@ -168,7 +165,7 @@ def check_and_model(constraints, sha_constraints):
                     vars |= get_vars_non_recursive(c.start, True)
                 if not concrete(c.size):
                     vars |= get_vars_non_recursive(c.size, True)
-                logging.debug("Trying to resolve %s, start and size vars: %s", u, ','.join(map(str, vars)))
+                #logging.debug("Trying to resolve %s, start and size vars: %s", u, ','.join(map(str, vars)))
                 if any(x.get_id() in unresolved_vars for x in vars):
                     continue
                 start = c.start
@@ -192,13 +189,13 @@ def check_and_model(constraints, sha_constraints):
                 unresolved_todo.append(u)
             else:
                 vars = get_vars_non_recursive(c, True)
-                logging.debug("Trying to resolve %s, vars: %s", u, ','.join(map(str, vars)))
+                #logging.debug("Trying to resolve %s, vars: %s", u, ','.join(map(str, vars)))
                 if any(x.get_id() in unresolved_vars for x in vars):
                     continue
                 v = m.eval(c)
                 if z3util.is_expr_val(v):
-                    logging.debug("%s can be resolved", u)
-                    logging.debug("Hashing %s", hexlify(to_bytes(v)))
+                    #logging.debug("%s can be resolved", u)
+                    #logging.debug("Hashing %s", hexlify(to_bytes(v)))
                     sha = utils.big_endian_to_int(utils.sha3(to_bytes(v)))
                     sol.add(c == v)
                     sol.add(u == sha)

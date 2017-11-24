@@ -9,7 +9,6 @@ from z3 import z3, z3util
 import utils
 from .disassembly import disass
 from .memory import UninitializedRead
-from .z3_extra_util import add_suffix
 from .z3_extra_util import get_vars_non_recursive
 
 
@@ -101,6 +100,8 @@ class Memory(object):
 class SymbolicMemory(object):
     def __init__(self):
         self.memory = z3.K(z3.BitVecSort(256), z3.BitVecVal(0, 8))
+        self.write_count = 0
+        self.read_count = 0
 
     def __getitem__(self, index):
         if isinstance(index, slice):
@@ -113,6 +114,7 @@ class SymbolicMemory(object):
                 r.append(self[i])
             return r
         else:
+            self.read_count += 1
             v = z3.simplify(self.memory[index])
             if z3.is_bv_value(v):
                 return v.as_long()
@@ -128,6 +130,7 @@ class SymbolicMemory(object):
             for j, i in enumerate(xrange(index.start or 0, index.stop, index.step or 1)):
                 self[i] = v[j]
         else:
+            self.write_count += 1
             if isinstance(v, basestring):
                 v = ord(v)
 
@@ -166,11 +169,6 @@ class SymbolicMemory(object):
     def extend(self, start, size):
         pass
 
-    def translate(self, level, extra_subst):
-        new_memory = copy.copy(self)
-        new_memory.memory = add_suffix(self.memory, level, extra_subst)
-        return new_memory
-
 
 class SymRead(object):
     def __init__(self, memory, start, size):
@@ -182,33 +180,17 @@ class SymRead(object):
         if not concrete(size):
             self.size = z3.simplify(self.size)
 
-    def translate(self, level, extra_subst):
-        new_symread = copy.copy(self)
-        new_symread.memory = self.memory.translate(level, extra_subst)
-        if not concrete(self.start):
-            new_symread.start = add_suffix(self.start, level, extra_subst)
-        if not concrete(self.size):
-            new_symread.size = add_suffix(self.size, level, extra_subst)
-        return new_symread
-
 
 class SymbolicStorage(object):
-    def __init__(self):
-        self.storage = z3.Array('STORAGE', z3.BitVecSort(256), z3.BitVecSort(256))
-        self.history = [self.storage]
+    def __init__(self, xid):
+        self.base = z3.Array('STORAGE_%d'%xid, z3.BitVecSort(256), z3.BitVecSort(256))
+        self.storage = self.base
 
     def __getitem__(self, index):
         return self.storage[index]
 
     def __setitem__(self, index, v):
         self.storage = z3.Store(self.storage, index, v)
-        self.history.append(self.storage)
-
-    def translate(self, level, extra_subst):
-        new_storage = copy.copy(self)
-        new_storage.storage = add_suffix(self.storage, level, extra_subst)
-        new_storage.history = [add_suffix(h, level, extra_subst) for h in self.history]
-        return new_storage
 
 
 class AbstractEVMState(object):
@@ -229,27 +211,11 @@ class EVMState(AbstractEVMState):
 
 
 class SymbolicEVMState(AbstractEVMState):
-    def __init__(self, code=None):
+    def __init__(self, xid, code=None):
         super(SymbolicEVMState, self).__init__(code)
         self.memory = SymbolicMemory()
-        self.storage = SymbolicStorage()
-        self.gas = z3.BitVec('GAS', 256)
-
-    def translate(self, level, extra_subst):
-        new_state = copy.copy(self)
-        new_state.memory = self.memory.translate(level, extra_subst)
-        new_state.storage = self.storage.translate(level, extra_subst)
-        new_state.stack = [s if concrete(s) else add_suffix(s, level, extra_subst) for s in self.stack]
-        new_state.gas = add_suffix(self.gas, level, extra_subst)
-        return new_state
-
-    def rebase(self, storage):
-        subst = [(self.storage.history[0], storage)]
-        new_state = copy.copy(self)
-        new_state.memory = self.memory.rebase(subst)
-        new_state.storage = self.storage.rebase(subst)
-        new_state.stack = [s if concrete(s) else z3.substitute(s, subst) for s in self.stack]
-        return new_state
+        self.storage = SymbolicStorage(xid)
+        self.gas = z3.BitVec('GAS_%d'%xid, 256)
 
 
 class Context(object):
@@ -524,8 +490,8 @@ def concrete(v):
     return isinstance(v, numbers.Number)
 
 
-def ctx_or_symbolic(v, ctx):
-    return ctx.get(v, z3.BitVec('%s' % v, 256))
+def ctx_or_symbolic(v, ctx, xid):
+    return ctx.get(v, z3.BitVec('%s_%d'%(v,xid), 256))
 
 
 def is_false(cond):
@@ -546,26 +512,31 @@ def addr(expr):
 def run_symbolic(program, path, code=None, state=None, ctx=None, inclusive=False):
     # MAX_CALLDATA_SIZE = 512
     MAX_CALLDATA_SIZE = 256
+    if "xid" not in run_symbolic.__dict__:
+        run_symbolic.xid = 0
+    else:
+        run_symbolic.xid += 1
+    xid = run_symbolic.xid
 
-    state = state or SymbolicEVMState(code=code)
+    state = state or SymbolicEVMState(xid=xid, code=code)
     storage = state.storage
     constraints = []
     sha_constraints = dict()
     ctx = ctx or dict()
     ctx['CODESIZE-ADDRESS'] = len(code)
-    calldata = z3.Array('CALLDATA', z3.BitVecSort(256), z3.BitVecSort(8))
+    calldata = z3.Array('CALLDATA_%d'%xid, z3.BitVecSort(256), z3.BitVecSort(8))
     instruction_count = 0
     while state.pc in program:
         state.trace.append(state.pc)
         instruction_count += 1
         if not path and inclusive:
             state.success = True
-            return SymbolicResult(state, constraints, sha_constraints)
+            return SymbolicResult(xid, state, constraints, sha_constraints)
         if state.pc == path[0]:
             path = path[1:]
             if not path and not inclusive:
                 state.success = True
-                return SymbolicResult(state, constraints, sha_constraints)
+                return SymbolicResult(xid, state, constraints, sha_constraints)
 
         ins = program[state.pc]
         opcode = ins.op
@@ -584,7 +555,7 @@ def run_symbolic(program, path, code=None, state=None, ctx=None, inclusive=False
                 if path:
                     raise IntractablePath()
                 state.success = True
-                return SymbolicResult(state, constraints, sha_constraints)
+                return SymbolicResult(xid, state, constraints, sha_constraints)
             elif op == 'ADD':
                 stk.append(stk.pop() + stk.pop())
             elif op == 'SUB':
@@ -747,39 +718,39 @@ def run_symbolic(program, path, code=None, state=None, ctx=None, inclusive=False
                                 sha = k
                                 break
                         else:
-                            sha = z3.BitVec('SHA3_%x' % instruction_count, 256)
+                            sha = z3.BitVec('SHA3_%x_%d'%(instruction_count,xid), 256)
                             sha_constraints[sha] = sha_data
                     else:
                         sha_data = mm
-                        sha = z3.BitVec('SHA3_%x' % instruction_count, 256)
+                        sha = z3.BitVec('SHA3_%x_%d'%(instruction_count,xid), 256)
                         sha_constraints[sha] = sha_data
                     stk.append(sha)
                     # raise SymbolicError('symbolic computation of SHA3 not supported')
             elif op == 'ADDRESS':
-                stk.append(ctx_or_symbolic('ADDRESS', ctx))
+                stk.append(ctx_or_symbolic('ADDRESS', ctx, xid))
             elif op == 'BALANCE':
                 s0 = stk.pop()
                 if concrete(s0):
-                    stk.append(ctx_or_symbolic('BALANCE-%x' % s0, ctx))
-                elif is_true(s0 == addr(ctx_or_symbolic('ADDRESS', ctx))):
-                    stk.append(ctx_or_symbolic('BALANCE-ADDRESS', ctx))
-                elif is_true(s0 == addr(ctx_or_symbolic('CALLER', ctx))):
-                    stk.append(ctx_or_symbolic('BALANCE-CALLER', ctx))
+                    stk.append(ctx_or_symbolic('BALANCE-%x' % s0, ctx, xid))
+                elif is_true(s0 == addr(ctx_or_symbolic('ADDRESS', ctx, xid))):
+                    stk.append(ctx_or_symbolic('BALANCE-ADDRESS', ctx, xid))
+                elif is_true(s0 == addr(ctx_or_symbolic('CALLER', ctx, xid))):
+                    stk.append(ctx_or_symbolic('BALANCE-CALLER', ctx, xid))
                 else:
                     raise SymbolicError('balance of symbolic address (%s)' % str(z3.simplify(s0)))
             elif op == 'ORIGIN':
-                stk.append(ctx_or_symbolic('ORIGIN', ctx))
+                stk.append(ctx_or_symbolic('ORIGIN', ctx, xid))
             elif op == 'CALLER':
-                stk.append(ctx_or_symbolic('CALLER', ctx))
+                stk.append(ctx_or_symbolic('CALLER', ctx, xid))
             elif op == 'CALLVALUE':
-                stk.append(ctx_or_symbolic('CALLVALUE', ctx))
+                stk.append(ctx_or_symbolic('CALLVALUE', ctx, xid))
             elif op == 'CALLDATALOAD':
                 s0 = stk.pop()
                 if not concrete(s0):
                     constraints.append(z3.ULT(s0, MAX_CALLDATA_SIZE))
                 stk.append(z3.Concat([calldata[s0 + i] for i in xrange(32)]))
             elif op == 'CALLDATASIZE':
-                stk.append(z3.BitVec('CALLDATASIZE', 256))
+                stk.append(z3.BitVec('CALLDATASIZE_%d'%xid, 256))
             elif op == 'CALLDATACOPY':
                 mstart, dstart, size = stk.pop(), stk.pop(), stk.pop()
                 if not concrete(dstart):
@@ -788,7 +759,7 @@ def run_symbolic(program, path, code=None, state=None, ctx=None, inclusive=False
                     for i in xrange(size):
                         mem[mstart + i] = calldata[dstart + i]
                 else:
-                    calldatasize = z3.BitVec('CALLDATASIZE', 256)
+                    calldatasize = z3.BitVec('CALLDATASIZE_%d'%xid, 256)
                     constraints.append(z3.UGE(calldatasize, dstart + size))
                     constraints.append(z3.ULT(size, MAX_CALLDATA_SIZE))
                     for i in xrange(MAX_CALLDATA_SIZE):
@@ -811,15 +782,15 @@ def run_symbolic(program, path, code=None, state=None, ctx=None, inclusive=False
             elif op == 'RETURNDATASIZE':
                 raise ExternalData('RETURNDATASIZE')
             elif op == 'GASPRICE':
-                stk.append(ctx_or_symbolic('GASPRICE', ctx))
+                stk.append(ctx_or_symbolic('GASPRICE', ctx, xid))
             elif op == 'EXTCODESIZE':
                 s0 = stk.pop()
                 if concrete(s0):
-                    stk.append(ctx_or_symbolic('CODESIZE-%x' % s0, ctx))
-                elif is_true(s0 == addr(ctx_or_symbolic('ADDRESS', ctx))):
-                    stk.append(ctx_or_symbolic('CODESIZE-ADDRESS', ctx))
-                elif is_true(s0 == addr(ctx_or_symbolic('CALLER', ctx))):
-                    stk.append(ctx_or_symbolic('CODESIZE-CALLER', ctx))
+                    stk.append(ctx_or_symbolic('CODESIZE-%x' % s0, ctx, xid))
+                elif is_true(s0 == addr(ctx_or_symbolic('ADDRESS', ctx, xid))):
+                    stk.append(ctx_or_symbolic('CODESIZE-ADDRESS', ctx, xid))
+                elif is_true(s0 == addr(ctx_or_symbolic('CALLER', ctx, xid))):
+                    stk.append(ctx_or_symbolic('CODESIZE-CALLER', ctx, xid))
                 else:
                     raise SymbolicError('codesize of symblic address')
             elif op == 'EXTCODECOPY':
@@ -830,17 +801,17 @@ def run_symbolic(program, path, code=None, state=None, ctx=None, inclusive=False
                 s0 = stk.pop()
                 if not concrete(s0):
                     raise SymbolicError('symbolic blockhash index')
-                stk.append(ctx_or_symbolic('BLOCKHASH[%d]' % s0))
+                stk.append(ctx_or_symbolic('BLOCKHASH[%d]' % s0, xid))
             elif op == 'COINBASE':
-                stk.append(ctx_or_symbolic('COINBASE', ctx))
+                stk.append(ctx_or_symbolic('COINBASE', ctx, xid))
             elif op == 'TIMESTAMP':
-                stk.append(ctx_or_symbolic('TIMESTAMP', ctx))
+                stk.append(ctx_or_symbolic('TIMESTAMP', ctx, xid))
             elif op == 'NUMBER':
-                stk.append(ctx_or_symbolic('NUMBER', ctx))
+                stk.append(ctx_or_symbolic('NUMBER', ctx, xid))
             elif op == 'DIFFICULTY':
-                stk.append(ctx_or_symbolic('DIFFICULTY', ctx))
+                stk.append(ctx_or_symbolic('DIFFICULTY', ctx, xid))
             elif op == 'GASLIMIT':
-                stk.append(ctx_or_symbolic('GASLIMIT', ctx))
+                stk.append(ctx_or_symbolic('GASLIMIT', ctx, xid))
         # VM state manipulations
         elif opcode < 0x60:
             if op == 'POP':
@@ -952,14 +923,14 @@ def run_symbolic(program, path, code=None, state=None, ctx=None, inclusive=False
         # Create a new contract
         elif op == 'CREATE':
             s0, s1, s2 = stk.pop(), stk.pop(), stk.pop()
-            stk.append(addr(z3.BitVec('EXT_CREATE_%d' % instruction_count, 256)))
+            stk.append(addr(z3.BitVec('EXT_CREATE_%d_%d' % (instruction_count, xid), 256)))
         # Calls
         elif op in ('CALL', 'CALLCODE', 'DELEGATECALL', 'STATICCALL'):
             if op in ('CALL', 'CALLCODE'):
                 s0, s1, s2, s3, s4, s5, s6 = stk.pop(), stk.pop(), stk.pop(), stk.pop(), stk.pop(), stk.pop(), stk.pop()
             elif op == 'DELEGATECALL':
                 s0, s1, s3, s4, s5, s6 = stk.pop(), stk.pop(), stk.pop(), stk.pop(), stk.pop(), stk.pop(), stk.pop()
-                s2 = ctx_or_symbolic('CALLVALUE', ctx)
+                s2 = ctx_or_symbolic('CALLVALUE', ctx, xid)
             elif op == 'STATICCALL':
                 s0, s1, s3, s4, s5, s6 = stk.pop(), stk.pop(), stk.pop(), stk.pop(), stk.pop(), stk.pop(), stk.pop()
                 s2 = 0
@@ -974,12 +945,12 @@ def run_symbolic(program, path, code=None, state=None, ctx=None, inclusive=False
                 logging.info("Calling precompiled identity contract")
                 istart = s3 if concrete(s3) else z3.simplify(s3)
                 for i in xrange(olen):
-                    mem[ostart+i] = mem[istart+i]
+                    mem[ostart + i] = mem[istart + i]
                 else:
                     raise SymbolicError("Precompiled contract %d not implemented", s1)
             else:
                 for i in xrange(olen):
-                    mem[ostart+i] = z3.BitVec('EXT_%d_%d'%(instruction_count, i))
+                    mem[ostart + i] = z3.BitVec('EXT_%d_%d_%d' % (instruction_count, i, xid))
 
             # assume call succeeded
             stk.append(1)
@@ -990,7 +961,7 @@ def run_symbolic(program, path, code=None, state=None, ctx=None, inclusive=False
             state.success = True
             if path:
                 raise IntractablePath()
-            return SymbolicResult(state, constraints, sha_constraints)
+            return SymbolicResult(xid, state, constraints, sha_constraints)
         # Revert opcode (Metropolis)
         elif op == 'REVERT':
             s0, s1 = stk.pop(), stk.pop()
@@ -999,25 +970,26 @@ def run_symbolic(program, path, code=None, state=None, ctx=None, inclusive=False
             mem.extend(s0, s1)
             if path:
                 raise IntractablePath()
-            return SymbolicResult(state, constraints, sha_constraints)
+            return SymbolicResult(xid, state, constraints, sha_constraints)
         # SUICIDE opcode (also called SELFDESTRUCT)
         elif op == 'SUICIDE':
             s0 = stk.pop()
             state.success = True
             if path:
                 raise IntractablePath()
-            return SymbolicResult(state, constraints, sha_constraints)
+            return SymbolicResult(xid, state, constraints, sha_constraints)
 
         state.pc += 1
 
     if path:
         raise IntractablePath()
     state.success = True
-    return SymbolicResult(state, constraints, sha_constraints)
+    return SymbolicResult(xid, state, constraints, sha_constraints)
 
 
 class SymbolicResult(object):
-    def __init__(self, state, constraints, sha_constraints):
+    def __init__(self, xid, state, constraints, sha_constraints):
+        self.xid = xid
         self.state = state
         self.constraints = constraints
         self.sha_constraints = sha_constraints
@@ -1027,17 +999,6 @@ class SymbolicResult(object):
         self.constraints = [z3.simplify(c) for c in self.constraints]
         self.sha_constraints = {sha: z3.simplify(sha_value) for sha, sha_value in self.sha_constraints.items()}
 
-    def translate(self, level, storage_base):
-        subst = [(self.state.storage.history[0], storage_base)]
-        new_state = self.state.translate(level, subst)
-        new_constraints = [add_suffix(c, level, subst) for c in self.constraints]
-        new_sha_constraints = {add_suffix(sha, level, subst): (
-            add_suffix(sha_value, level, subst) if not isinstance(sha_value, SymRead) else sha_value.translate(level,
-                                                                                                               subst))
-            for
-            sha, sha_value in self.sha_constraints.items()}
-        return SymbolicResult(new_state, new_constraints, new_sha_constraints)
-
 
 class CombinedSymbolicResult(object):
     def __init__(self):
@@ -1045,6 +1006,7 @@ class CombinedSymbolicResult(object):
         self._constraints = None
         self._sha_constraints = None
         self._states = None
+        self._level = None
         self.calls = 0
 
     def _reset(self):
@@ -1053,22 +1015,28 @@ class CombinedSymbolicResult(object):
         self._states = None
 
     def _combine(self):
-        storage_base = z3.K(z3.BitVecSort(256), z3.BitVecVal(0, 256))
-        translated_results = []
-        for i, result in enumerate(self.results):
-            tr = result.translate(i, storage_base)
-            storage_base = tr.state.storage.storage
-            translated_results.append(tr)
+        self._states = [r.state for r in self.results]
+        self._constraints = [c for r in self.results for c in r.constraints]
+        self._sha_constraints = {sha: sha_value for r in self.results for sha, sha_value in
+                                 r.sha_constraints.iteritems()}
 
-        self._states = [tr.state for tr in translated_results]
-        self._constraints = [c for tr in translated_results for c in tr.constraints]
-        self._sha_constraints = {sha: sha_value for tr in translated_results for sha, sha_value in
-                                 tr.sha_constraints.items()}
+        storage_base = z3.K(z3.BitVecSort(256), z3.BitVecVal(0, 256))
+        for result in self.results:
+            self._constraints.append(storage_base == result.state.storage.base)
+            storage_base = result.state.storage.storage
+
+        self._level = {r.xid: i for i,r in enumerate(self.results)}
 
     def prepend(self, result):
         self.calls += 1
         self.results = [result] + self.results
         self._reset()
+
+    @property
+    def level(self):
+        if self._level is None:
+            self._combine()
+        return self._level
 
     @property
     def constraints(self):
@@ -1176,11 +1144,15 @@ def get_sha_subst(f, sha_ids, rs=None):
 
 
 def get_sha_subst_non_recursive(f, sha_ids):
+    import timeit
+    start = timeit.default_timer()
     todo = [z3.simplify(f, expand_select_store=True)]
     rs = set()
     seen = set()
+    subexprcount = 0
     while todo:
         expr = todo.pop()
+        subexprcount += 1
         if expr.get_id() in seen:
             continue
         seen.add(expr.get_id())
@@ -1205,4 +1177,6 @@ def get_sha_subst_non_recursive(f, sha_ids):
         else:
             todo.extend(expr.children())
 
+    end = timeit.default_timer()
+    # logging.info("get_sha_subst_non_recursive took %d microseconds (%d subexpressions)", (end-start)*1000000.0, subexprcount)
     return rs

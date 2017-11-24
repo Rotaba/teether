@@ -87,12 +87,12 @@ class Project(object):
                 return not set(i.name for i in pred.ins) & set(external_data)
 
         for path in self.cfg.get_paths(instructions, predicate=predicate):
-            logging.debug('Path %s', ' -> '.join('%x' % p for p in path))
+            #logging.debug('Path %s', ' -> '.join('%x' % p for p in path))
             # If this path is NOT a superset of an interesting slice, skip it
-            if args and not any(all(loc in path for loc in sub_path) for sub_path in interesting_sub_paths):
+            if args and not any(all(loc in path for loc in sub_path) for sub_path in interesting_sub_paths[path[-1]]):
                 continue
             try:
-                logging.debug('This could be interesting...')
+                #logging.debug('This could be interesting...')
                 ins = imap[path[-1]]
                 yield ins, path, self.run_symbolic(path, inclusive)
             except IntractablePath:

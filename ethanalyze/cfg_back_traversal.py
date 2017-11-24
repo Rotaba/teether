@@ -46,11 +46,11 @@ class TraversalState(object):
 def generate_sucessors(state, new_data, update_data, predicate=lambda st,pred:True):
     new_todo = []
     if state.gas is None or state.gas > 0:
-        logging.debug('[tr] [gs] passed first if')
+        #logging.debug('[tr] [gs] passed first if')
         new_gas = state.gas
         if state.gas and len(state.bb.pred) > 1:
             new_gas = state.gas - 1
-        logging.debug('[tr] [gs] Preds: %s', state.bb.pred)
+        #logging.debug('[tr] [gs] Preds: %s', state.bb.pred)
 
         for p in state.bb.pred:
             if not predicate(state.data, p):
@@ -64,7 +64,7 @@ def generate_sucessors(state, new_data, update_data, predicate=lambda st,pred:Tr
                 if p.start in new_must_visit.frontier:
                     new_must_visit.remove(p.start)
                 if not new_must_visit.all.issubset(p.ancestors):
-                    logging.debug('[tr] [gs] Cannot reach any necessary states, aborting! Needed: %s, reachable: %s', new_must_visit, p.ancestors)
+                    #logging.debug('[tr] [gs] Cannot reach any necessary states, aborting! Needed: %s, reachable: %s', new_must_visit, p.ancestors)
                     continue
                 new_must_visits.append(new_must_visit)
 
@@ -91,7 +91,7 @@ def traverse_back(start_ins, initial_gas, initial_data, advance_data, update_dat
     todo = PriorityQueue()
 
     for ins in start_ins:
-        logging.debug('[tr] Starting traversal at %x', ins.addr)
+        #logging.debug('[tr] Starting traversal at %x', ins.addr)
         data = initial_data(ins)
         bb = ins.bb
         gas = initial_gas
@@ -112,23 +112,22 @@ def traverse_back(start_ins, initial_gas, initial_data, advance_data, update_dat
         # or whether another path already reached it with the same state
         if len(state.bb.succ) > 1:
             if state in cache:
-                logging.debug('[tr] CACHE HIT')
+                #logging.debug('[tr] CACHE HIT')
                 continue
             cache.add(state)
-        logging.debug('[tr] Cachesize: %d\t(slicing %x, currently at %x)', len(cache), ins.addr, state.bb.start)
-        logging.debug('[tr] Current state: %s', state)
+        #logging.debug('[tr] Cachesize: %d\t(slicing %x, currently at %x)', len(cache), ins.addr, state.bb.start)
+        #logging.debug('[tr] Current state: %s', state)
         new_data = advance_data(state.data)
         if finish_path(new_data):
-            logging.debug('[tr] finished path (%s)', new_data)
+            #logging.debug('[tr] finished path (%s)', new_data)
             yield new_data
         else:
             if state.gas == 0:
                 ended_prematurely[state.bb.start] += 1
             elif state.gas < state.bb.estimate_back_branches:
-                logging.info("State %s has no chance to reach root", state)
                 ended_prematurely[state.bb.start] += 1
             else:
-                logging.debug('[tr] continuing path (%s)', new_data)
+                #logging.debug('[tr] continuing path (%s)', new_data)
                 new_todo = generate_sucessors(state, new_data, update_data, predicate=predicate)
                 for nt in new_todo:
                     todo.put((nt.rank(), nt))

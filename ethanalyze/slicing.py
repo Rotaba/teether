@@ -122,7 +122,7 @@ def advance_slice(slicing_state, memory_info):
 
 
 def backward_slice(ins, taint_args=None, memory_info=None, initial_gas=10, must_visits=[]):
-    logging.debug('backward_slice called')
+    #logging.debug('backward_slice called')
     if ins.ins == 0:
         return
     if taint_args:
@@ -154,7 +154,7 @@ def backward_slice(ins, taint_args=None, memory_info=None, initial_gas=10, must_
     def finish_path(slicing_state):
         return not slicing_state.taintmap and not slicing_state.memory_taint
 
-    logging.debug('Before loop')
+    #logging.debug('Before loop')
     return [r.backward_slice[::-1] for r in traverse_back([ins], initial_gas, initial_data, advance_data, update_data, finish_path, must_visits)]
 
 

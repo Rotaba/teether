@@ -130,7 +130,7 @@ class BB(object):
                 seen.add(bb)
                 if bb.indirect_jump:
                     bb.must_visit.append({self.start})
-                logging.debug('BB@%x, must_visit: %s', bb.start, bb.must_visit)
+                #logging.debug('BB@%x, must_visit: %s', bb.start, bb.must_visit)
                 todo.extend(s for s in bb.succ if s not in seen)
 
     def _find_jump_target(self):
@@ -222,12 +222,12 @@ class CFG(object):
         return [ins for bb in self.bbs for ins in bb.ins if ins.name in names]
 
     def _xrefs(self, fix_only_easy_xrefs=False):
-        logging.debug('Fixing Xrefs')
+        #logging.debug('Fixing Xrefs')
         self._easy_xrefs()
-        logging.debug('Easy Xrefs fixed, turning to hard ones now')
+        #logging.debug('Easy Xrefs fixed, turning to hard ones now')
         if not fix_only_easy_xrefs:
             self._hard_xrefs()
-            logging.debug('Hard Xrefs also fixed, good to go')
+            #logging.debug('Hard Xrefs also fixed, good to go')
 
     def _easy_xrefs(self):
         for pred in self.bbs:
@@ -252,7 +252,7 @@ class CFG(object):
                         succ = self._bb_at[succ_addr]
                         pred.add_succ(succ, new_succ_path)
                         if not (pred.start, succ.start) in links:
-                            logging.debug('found new link from %x to %x', pred.start, succ.start)
+                            #logging.debug('found new link from %x to %x', pred.start, succ.start)
                             with open('cfg-tmp%d.dot' % len(links), 'w') as outfile:
                                 outfile.write(self.to_dot())
                             new_link = True
