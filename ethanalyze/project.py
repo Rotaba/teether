@@ -68,15 +68,18 @@ class Project(object):
         old_pred = predicate
         if args:
             # Check if ins.bb is set, as slices include padding instructions (PUSH, POP)
-            interesting_sub_paths = [[i.bb.start for i in bs if i.bb] for ins in instructions for bs in
-                                     interesting_slices(ins, args)]
+            interesting_sub_paths = {
+            ins.addr: [[i.bb.start for i in bs if i.bb] for bs in interesting_slices(ins, args)] for ins in
+            instructions}
+
             # Update predicate to check that a full sub_path is contained in the current path
             def predicate(path, pred):
                 if not old_pred(path, pred):
                     return False
                 if set(i.name for i in pred.ins) & set(external_data):
                     return False
-                return any((set(path) | {pred.start} | pred.ancestors).issuperset(sub_path) for sub_path in interesting_sub_paths)
+                return any((set(path) | {pred.start} | pred.ancestors).issuperset(sub_path) for sub_path in
+                           interesting_sub_paths[path[0]])
         else:
             def predicate(path, pred):
                 if not old_pred(path, pred):
