@@ -1,4 +1,3 @@
-import copy
 import logging
 import numbers
 from binascii import hexlify
@@ -183,7 +182,7 @@ class SymRead(object):
 
 class SymbolicStorage(object):
     def __init__(self, xid):
-        self.base = z3.Array('STORAGE_%d'%xid, z3.BitVecSort(256), z3.BitVecSort(256))
+        self.base = z3.Array('STORAGE_%d' % xid, z3.BitVecSort(256), z3.BitVecSort(256))
         self.storage = self.base
 
     def __getitem__(self, index):
@@ -191,6 +190,12 @@ class SymbolicStorage(object):
 
     def __setitem__(self, index, v):
         self.storage = z3.Store(self.storage, index, v)
+
+    def copy(self, new_xid):
+        new_storage = SymbolicStorage(new_xid)
+        new_storage.base = translate(self.base, new_xid)
+        new_storage.storage = translate(self.storage, new_xid)
+        return new_storage
 
 
 class AbstractEVMState(object):
@@ -215,7 +220,17 @@ class SymbolicEVMState(AbstractEVMState):
         super(SymbolicEVMState, self).__init__(code)
         self.memory = SymbolicMemory()
         self.storage = SymbolicStorage(xid)
-        self.gas = z3.BitVec('GAS_%d'%xid, 256)
+        self.gas = z3.BitVec('GAS_%d' % xid, 256)
+
+    def copy(self, new_xid):
+        # Make a superficial copy of this state.
+        # Effectively, only the storage is copied,
+        # as this is sufficient to prepend a
+        # result with this state to another call
+        new_storage = self.storage.copy(new_xid)
+        new_state = SymbolicEVMState(new_xid)
+        new_state.storage = new_storage
+        return new_state
 
 
 class Context(object):
@@ -491,7 +506,7 @@ def concrete(v):
 
 
 def ctx_or_symbolic(v, ctx, xid):
-    return ctx.get(v, z3.BitVec('%s_%d'%(v,xid), 256))
+    return ctx.get(v, z3.BitVec('%s_%d' % (v, xid), 256))
 
 
 def is_false(cond):
@@ -524,7 +539,7 @@ def run_symbolic(program, path, code=None, state=None, ctx=None, inclusive=False
     sha_constraints = dict()
     ctx = ctx or dict()
     ctx['CODESIZE-ADDRESS'] = len(code)
-    calldata = z3.Array('CALLDATA_%d'%xid, z3.BitVecSort(256), z3.BitVecSort(8))
+    calldata = z3.Array('CALLDATA_%d' % xid, z3.BitVecSort(256), z3.BitVecSort(8))
     instruction_count = 0
     while state.pc in program:
         state.trace.append(state.pc)
@@ -718,11 +733,11 @@ def run_symbolic(program, path, code=None, state=None, ctx=None, inclusive=False
                                 sha = k
                                 break
                         else:
-                            sha = z3.BitVec('SHA3_%x_%d'%(instruction_count,xid), 256)
+                            sha = z3.BitVec('SHA3_%x_%d' % (instruction_count, xid), 256)
                             sha_constraints[sha] = sha_data
                     else:
                         sha_data = mm
-                        sha = z3.BitVec('SHA3_%x_%d'%(instruction_count,xid), 256)
+                        sha = z3.BitVec('SHA3_%x_%d' % (instruction_count, xid), 256)
                         sha_constraints[sha] = sha_data
                     stk.append(sha)
                     # raise SymbolicError('symbolic computation of SHA3 not supported')
@@ -750,7 +765,7 @@ def run_symbolic(program, path, code=None, state=None, ctx=None, inclusive=False
                     constraints.append(z3.ULT(s0, MAX_CALLDATA_SIZE))
                 stk.append(z3.Concat([calldata[s0 + i] for i in xrange(32)]))
             elif op == 'CALLDATASIZE':
-                stk.append(z3.BitVec('CALLDATASIZE_%d'%xid, 256))
+                stk.append(z3.BitVec('CALLDATASIZE_%d' % xid, 256))
             elif op == 'CALLDATACOPY':
                 mstart, dstart, size = stk.pop(), stk.pop(), stk.pop()
                 if not concrete(dstart):
@@ -759,7 +774,7 @@ def run_symbolic(program, path, code=None, state=None, ctx=None, inclusive=False
                     for i in xrange(size):
                         mem[mstart + i] = calldata[dstart + i]
                 else:
-                    calldatasize = z3.BitVec('CALLDATASIZE_%d'%xid, 256)
+                    calldatasize = z3.BitVec('CALLDATASIZE_%d' % xid, 256)
                     constraints.append(z3.UGE(calldatasize, dstart + size))
                     constraints.append(z3.ULT(size, MAX_CALLDATA_SIZE))
                     for i in xrange(MAX_CALLDATA_SIZE):
@@ -994,10 +1009,30 @@ class SymbolicResult(object):
         self.constraints = constraints
         self.sha_constraints = sha_constraints
         self.calls = 1
+        self._simplified = False
 
     def simplify(self):
+        if self._simplified:
+            return
         self.constraints = [z3.simplify(c) for c in self.constraints]
         self.sha_constraints = {sha: z3.simplify(sha_value) for sha, sha_value in self.sha_constraints.items()}
+        self._simplified = True
+
+    def copy(self):
+        if "xid" not in run_symbolic.__dict__:
+            run_symbolic.xid = 0
+        else:
+            run_symbolic.xid += 1
+        new_xid = run_symbolic.xid
+
+        self.simplify()
+
+        new_constraints = [translate(c, new_xid) for c in self.constraints]
+        new_sha_constraints = {translate(sha, new_xid): translate(sha_value, new_xid) for sha, sha_value in
+                               self.sha_constraints.items()}
+        new_state = self.state.copy(new_xid)
+
+        return SymbolicResult(new_xid, new_state, new_constraints, new_sha_constraints)
 
 
 class CombinedSymbolicResult(object):
@@ -1005,8 +1040,10 @@ class CombinedSymbolicResult(object):
         self.results = []
         self._constraints = None
         self._sha_constraints = None
+        self._storage_constraints = None
         self._states = None
         self._level = None
+        self._idx_dict = None
         self.calls = 0
 
     def _reset(self):
@@ -1021,11 +1058,12 @@ class CombinedSymbolicResult(object):
                                  r.sha_constraints.iteritems()}
 
         storage_base = z3.K(z3.BitVecSort(256), z3.BitVecVal(0, 256))
+        self._storage_constraints = []
         for result in self.results:
-            self._constraints.append(storage_base == result.state.storage.base)
+            self._storage_constraints.append(storage_base == result.state.storage.base)
             storage_base = result.state.storage.storage
 
-        self._level = {r.xid: i for i,r in enumerate(self.results)}
+        self._idx_dict = {r.xid: i for i, r in enumerate(self.results)}
 
     def prepend(self, result):
         self.calls += 1
@@ -1033,10 +1071,10 @@ class CombinedSymbolicResult(object):
         self._reset()
 
     @property
-    def level(self):
+    def idx_dict(self):
         if self._level is None:
             self._combine()
-        return self._level
+        return self._idx_dict
 
     @property
     def constraints(self):
@@ -1049,6 +1087,12 @@ class CombinedSymbolicResult(object):
         if self._sha_constraints is None:
             self._combine()
         return self._sha_constraints
+
+    @property
+    def storage_constraints(self):
+        if self._storage_constraints is None:
+            self._combine()
+        return self._storage_constraints
 
     @property
     def states(self):
@@ -1180,3 +1224,26 @@ def get_sha_subst_non_recursive(f, sha_ids):
     end = timeit.default_timer()
     # logging.info("get_sha_subst_non_recursive took %d microseconds (%d subexpressions)", (end-start)*1000000.0, subexprcount)
     return rs
+
+
+def translate(expr, xid):
+    substitutions = dict()
+
+    def raw(s):
+        return '_'.join(s.split('_')[:-1])
+
+    for v in get_vars_non_recursive(expr):
+        if v not in substitutions:
+            v_name = raw(v.decl().name())
+            if v.sort_kind() == z3.Z3_INT_SORT:
+                substitutions[v] = z3.Int('%s_%d' % (v_name, xid))
+            elif v.sort_kind() == z3.Z3_BOOL_SORT:
+                substitutions[v] = z3.Bool('%s_%d' % (v_name, xid))
+            elif v.sort_kind() == z3.Z3_BV_SORT:
+                substitutions[v] = z3.BitVec('%s_%d' % (v_name, xid), v.size())
+            elif v.sort_kind() == z3.Z3_ARRAY_SORT:
+                substitutions[v] = z3.Array('%s_%d' % (v_name, xid), v.domain(), v.range())
+            else:
+                raise Exception('CANNOT CONVERT %s (%d)' % (v, v.sort_kind()))
+    subst = substitutions.items()
+    return z3.substitute(expr, subst)

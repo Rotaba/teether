@@ -34,12 +34,11 @@ def get_level(name):
         return 0
 
 
-def model_to_calls(model, num_calls=1):
+def model_to_calls(model, idx_dict):
     calls = defaultdict(dict)
     for v in model:
         name = v.name()
-        #call_index = ((num_calls-1) - get_level(name))
-        call_index = get_level(name)
+        call_index = idx_dict[get_level(name)]
         if name.startswith('CALLDATASIZE'):
             # ignore for now...
             pass
@@ -92,19 +91,25 @@ def symread_substitute(x, subst):
         return new_symread
 
 
-def check_model_and_resolve(constraints, sha_constraints):
+def check_model_and_resolve(constraints, sha_constraints, storage_constraints):
     sha_ids = {sha.get_id() for sha in sha_constraints.keys()}
     constraints = [simplify_non_const_hashes(c, sha_ids) for c in constraints]
     #logging.debug('-' * 32)
     extra_constraints = []
 
+    s = z3.Solver()
+    s.add(constraints + storage_constraints)
+    if s.check() != z3.sat:
+        raise IntractablePath()
+
     while True:
         for a, b in itertools.combinations(sha_constraints.keys(), 2):
             if (not isinstance(sha_constraints[a], SymRead) and not isinstance(sha_constraints[b], SymRead) and
                         sha_constraints[a].size() != sha_constraints[b].size()):
+                extra_constraints.append(a != b)
                 continue
             s = z3.Solver()
-            s.add(constraints + extra_constraints + [a != b, symread_neq(sha_constraints[a], sha_constraints[b])])
+            s.add(constraints + storage_constraints + extra_constraints + [a != b, symread_neq(sha_constraints[a], sha_constraints[b])])
             check_result = s.check()
             #logging.debug("Checking hashes %s and %s: %s", a, b, check_result)
             if check_result == z3.unsat:
@@ -112,6 +117,7 @@ def check_model_and_resolve(constraints, sha_constraints):
                 extra_constraints.append(symread_eq(sha_constraints[a], sha_constraints[b]))
                 subst = [(a, b)]
                 constraints = [z3.simplify(z3.substitute(c, subst)) for c in constraints]
+                storage_constraints = [z3.simplify(z3.substitute(c, subst)) for c in storage_constraints]
                 sha_constraints = {z3.substitute(sha, subst): symread_substitute(sha_value, subst) for
                                    sha, sha_value in
                                    sha_constraints.items()}
@@ -123,34 +129,36 @@ def check_model_and_resolve(constraints, sha_constraints):
             break
 
 
-    return check_and_model(constraints + extra_constraints, sha_constraints)
+    return check_and_model(constraints, sha_constraints, storage_constraints + extra_constraints)
 
 
-def check_and_model(constraints, sha_constraints):
+def check_and_model(constraints, sha_constraints, storage_constraints):
     #logging.debug(' ' * 16 + '-' * 16)
     if not sha_constraints:
         sol = z3.Solver()
-        sol.add(constraints)
+        sol.add(constraints + storage_constraints)
         if sol.check() != z3.sat:
             raise IntractablePath()
         return sol.model()
 
     unresolved = set(sha_constraints.keys())
     sol = z3.Solver()
+    for sc in storage_constraints:
+        sol.add(sc)
     todo = constraints
     progress = True
     all_vars = dict()
-    while todo and progress:
+    while progress:
         new_todo = []
         progress = False
         for c in todo:
-            all_vars[c] = get_vars_non_recursive(c, True)
+            all_vars[c] = get_vars_non_recursive(c, include_select=True, include_indices=False)
             if any(x in unresolved for x in all_vars[c]):
                 new_todo.append(c)
             else:
                 progress = True
                 sol.add(c)
-        unresolved_vars = set(v.get_id() for c in new_todo for v in all_vars[c])
+        unresolved_vars = set(v.get_id() for c in new_todo for v in all_vars[c]) | set(v.get_id() for v in unresolved)
         #logging.debug("Unresolved vars: %s", ','.join(map(str, unresolved_vars)))
         if sol.check() != z3.sat:
             raise IntractablePath()
@@ -162,9 +170,9 @@ def check_and_model(constraints, sha_constraints):
             if isinstance(c, SymRead):
                 vars = set()
                 if not concrete(c.start):
-                    vars |= get_vars_non_recursive(c.start, True)
+                    vars |= get_vars_non_recursive(c.start, include_select=True)
                 if not concrete(c.size):
-                    vars |= get_vars_non_recursive(c.size, True)
+                    vars |= get_vars_non_recursive(c.size, include_select=True)
                 #logging.debug("Trying to resolve %s, start and size vars: %s", u, ','.join(map(str, vars)))
                 if any(x.get_id() in unresolved_vars for x in vars):
                     continue
@@ -188,7 +196,7 @@ def check_and_model(constraints, sha_constraints):
                 sha_constraints[u] = data
                 unresolved_todo.append(u)
             else:
-                vars = get_vars_non_recursive(c, True)
+                vars = get_vars_non_recursive(c, include_select=True)
                 #logging.debug("Trying to resolve %s, vars: %s", u, ','.join(map(str, vars)))
                 if any(x.get_id() in unresolved_vars for x in vars):
                     continue
@@ -200,6 +208,7 @@ def check_and_model(constraints, sha_constraints):
                     sol.add(c == v)
                     sol.add(u == sha)
                     unresolved.remove(u)
+                    unresolved_vars.remove(u.get_id())
                     progress = True
         todo = new_todo
     if sol.check() != z3.sat:

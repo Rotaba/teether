@@ -46,7 +46,7 @@ def get_vars(f, rs=set()):
         return set(rs)
 
 
-def get_vars_non_recursive(f, include_select=False):
+def get_vars_non_recursive(f, include_select=False, include_indices=True):
     todo = [f]
     rs = set()
     seen = set()
@@ -58,11 +58,11 @@ def get_vars_non_recursive(f, include_select=False):
         if include_select and expr.decl().kind() == z3.Z3_OP_SELECT:
             arr, idx = expr.children()
             if z3.is_const(arr):
-                if z3.z3util.is_expr_val(idx):
+                if not include_indices or z3.z3util.is_expr_val(idx):
                     rs.add(expr)
                 else:
                     rs.add(expr)
-                    rs.add(idx)
+                    todo.append(idx)
         elif z3.is_const(expr):
             if not z3.z3util.is_expr_val(expr):
                 rs.add(expr)
@@ -70,21 +70,3 @@ def get_vars_non_recursive(f, include_select=False):
             todo.extend(expr.children())
 
     return rs
-
-
-def add_suffix(expr, level, additional_subst):
-    substitutions = {k: v for k, v in additional_subst}
-    for v in get_vars_non_recursive(expr):
-        if v not in substitutions:
-            if v.sort_kind() == z3.Z3_INT_SORT:
-                substitutions[v] = z3.Int('%s_%d' % (v.decl().name(), level))
-            elif v.sort_kind() == z3.Z3_BOOL_SORT:
-                substitutions[v] = z3.Bool('%s_%d' % (v.decl().name(), level))
-            elif v.sort_kind() == z3.Z3_BV_SORT:
-                substitutions[v] = z3.BitVec('%s_%d' % (v.decl().name(), level), v.size())
-            elif v.sort_kind() == z3.Z3_ARRAY_SORT:
-                substitutions[v] = z3.Array('%s_%d' % (v.decl().name(), level), v.domain(), v.range())
-            else:
-                raise Exception('CANNOT CONVERT %s (%d)' % (v, v.sort_kind()))
-    subst = substitutions.items()
-    return z3.substitute(expr, subst)
