@@ -3,6 +3,7 @@ import numbers
 from binascii import hexlify
 from collections import defaultdict
 
+import datetime
 from z3 import z3, z3util
 
 import utils
@@ -582,6 +583,7 @@ def run_symbolic(program, path, code=None, state=None, ctx=None, inclusive=False
     constraints = []
     sha_constraints = dict()
     ctx = ctx or dict()
+    min_timestamp = (datetime.datetime.now() - datetime.datetime(1970,1,1)).total_seconds()
     ctx['CODESIZE-ADDRESS'] = len(code)
     calldata = z3.Array('CALLDATA_%d' % xid, z3.BitVecSort(256), z3.BitVecSort(8))
     instruction_count = 0
@@ -864,7 +866,10 @@ def run_symbolic(program, path, code=None, state=None, ctx=None, inclusive=False
             elif op == 'COINBASE':
                 stk.append(ctx_or_symbolic('COINBASE', ctx, xid))
             elif op == 'TIMESTAMP':
-                stk.append(ctx_or_symbolic('TIMESTAMP', ctx, xid))
+                ts = ctx_or_symbolic('TIMESTAMP', ctx, xid)
+                if not concrete(ts):
+                    constraints.append(z3.UGE(ts, min_timestamp))
+                stk.append(ts)
             elif op == 'NUMBER':
                 stk.append(ctx_or_symbolic('NUMBER', ctx, xid))
             elif op == 'DIFFICULTY':
@@ -935,9 +940,11 @@ def run_symbolic(program, path, code=None, state=None, ctx=None, inclusive=False
                 else:
                     next_target = path[0]
                     if state.pc + 1 == next_target:
-                        constraints.append(s1 == 0)
+                        if not (concrete(s0) and s0 == next_target):
+                            constraints.append(s1 == 0)
                     elif concrete(s0) and s0 == next_target:
-                        constraints.append(s1 != 0)
+                        if state.pc + 1 != next_target:
+                            constraints.append(s1 != 0)
                         state.pc = s0
                         if state.pc >= len(state.code) or not program[state.pc].name == 'JUMPDEST':
                             raise vm_exception('BAD JUMPDEST')
@@ -1095,10 +1102,12 @@ class CombinedSymbolicResult(object):
         self._sha_constraints = None
         self._states = None
 
-    def _combine(self):
+    def _combine(self, storage = dict()):
         storage_subst = []
 
         storage_base = z3.K(z3.BitVecSort(256), z3.BitVecVal(0, 256))
+        for k,v in storage.iteritems():
+            storage_base = z3.Store(storage_base, k, v)
         for result in self.results:
             storage_subst.append((result.state.storage.base, storage_base))
             storage_base = z3.substitute(result.state.storage.storage, storage_subst)
