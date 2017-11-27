@@ -106,7 +106,7 @@ def check_model_and_resolve_inner(constraints, sha_constraints):
     #logging.debug('-' * 32)
     extra_constraints = []
 
-    s = z3.Solver()
+    s = z3.SolverFor("QF_ABV")
     s.add(constraints)
     if s.check() != z3.sat:
         raise IntractablePath()
@@ -121,7 +121,7 @@ def check_model_and_resolve_inner(constraints, sha_constraints):
                         sha_constraints[a].size() != sha_constraints[b].size()):
                 ne_constraints.append(a != b)
                 continue
-            s = z3.Solver()
+            s = z3.SolverFor("QF_ABV")
             s.add(constraints + ne_constraints + extra_constraints + [a != b, symread_neq(sha_constraints[a], sha_constraints[b])])
             check_result = s.check()
             #logging.debug("Checking hashes %s and %s: %s", a, b, check_result)
@@ -149,7 +149,7 @@ def check_and_model(constraints, sha_constraints, ne_constraints):
     #logging.debug(' ' * 16 + '-' * 16)
 
     unresolved = set(sha_constraints.keys())
-    sol = z3.Solver()
+    sol = z3.SolverFor("QF_ABV")
     sol.add(ne_constraints)
     todo = constraints
     progress = True

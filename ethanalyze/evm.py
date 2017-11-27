@@ -1,9 +1,9 @@
+import datetime
 import logging
 import numbers
 from binascii import hexlify
 from collections import defaultdict
 
-import datetime
 from z3 import z3, z3util
 
 import utils
@@ -231,6 +231,8 @@ class SymbolicEVMState(AbstractEVMState):
         self.memory = SymbolicMemory()
         self.storage = SymbolicStorage(xid)
         self.gas = z3.BitVec('GAS_%d' % xid, 256)
+        self.start_balance = z3.BitVec('BALANCE_%d' % xid, 256)
+        self.balance = self.start_balance
 
     def copy(self, new_xid):
         # Make a superficial copy of this state.
@@ -242,13 +244,15 @@ class SymbolicEVMState(AbstractEVMState):
         new_state.storage = new_storage
         new_state.pc = self.pc
         new_state.trace = list(self.trace)
+        new_state.start_balance = translate(self.start_balance, new_xid)
+        new_state.balance = translate(self.balance, new_xid)
         return new_state
 
 
 class LazySubstituteState(object):
     def __init__(self, state, substitutions):
         self._state = state
-        self._substitutions = substitutions
+        self._substitutions = list(substitutions)
         self.memory = LazySubstituteMemory(self._state.memory, substitutions)
         self.stack = LazySubstituteStack(self._state.stack, substitutions)
         self.code = self._state.code
@@ -555,7 +559,7 @@ def ctx_or_symbolic(v, ctx, xid):
 
 
 def is_false(cond):
-    s = z3.Solver()
+    s = z3.SolverFor("QF_ABV")
     s.add(cond)
     return s.check() == z3.unsat
 
@@ -583,10 +587,13 @@ def run_symbolic(program, path, code=None, state=None, ctx=None, inclusive=False
     constraints = []
     sha_constraints = dict()
     ctx = ctx or dict()
-    min_timestamp = (datetime.datetime.now() - datetime.datetime(1970,1,1)).total_seconds()
+    min_timestamp = (datetime.datetime.now() - datetime.datetime(1970, 1, 1)).total_seconds()
+    # make sure we can exploit it in the foreseable future
+    max_timestamp = (datetime.datetime(2020, 1, 1) - datetime.datetime(1970, 1, 1)).total_seconds()
     ctx['CODESIZE-ADDRESS'] = len(code)
     calldata = z3.Array('CALLDATA_%d' % xid, z3.BitVecSort(256), z3.BitVecSort(8))
     instruction_count = 0
+    state.balance += ctx_or_symbolic('CALLVALUE', ctx, xid)
     while state.pc in program:
         state.trace.append(state.pc)
         instruction_count += 1
@@ -794,7 +801,7 @@ def run_symbolic(program, path, code=None, state=None, ctx=None, inclusive=False
                 if concrete(s0):
                     stk.append(ctx_or_symbolic('BALANCE-%x' % s0, ctx, xid))
                 elif is_true(s0 == addr(ctx_or_symbolic('ADDRESS', ctx, xid))):
-                    stk.append(ctx_or_symbolic('BALANCE-ADDRESS', ctx, xid))
+                    stk.append(state.balance)
                 elif is_true(s0 == addr(ctx_or_symbolic('CALLER', ctx, xid))):
                     stk.append(ctx_or_symbolic('BALANCE-CALLER', ctx, xid))
                 else:
@@ -869,6 +876,7 @@ def run_symbolic(program, path, code=None, state=None, ctx=None, inclusive=False
                 ts = ctx_or_symbolic('TIMESTAMP', ctx, xid)
                 if not concrete(ts):
                     constraints.append(z3.UGE(ts, min_timestamp))
+                    constraints.append(z3.ULE(ts, max_timestamp))
                 stk.append(ts)
             elif op == 'NUMBER':
                 stk.append(ctx_or_symbolic('NUMBER', ctx, xid))
@@ -989,11 +997,16 @@ def run_symbolic(program, path, code=None, state=None, ctx=None, inclusive=False
         # Create a new contract
         elif op == 'CREATE':
             s0, s1, s2 = stk.pop(), stk.pop(), stk.pop()
+            constraints.append(z3.UGE(state.balance, s0))
+            state.balance -= s0
             stk.append(addr(z3.BitVec('EXT_CREATE_%d_%d' % (instruction_count, xid), 256)))
         # Calls
         elif op in ('CALL', 'CALLCODE', 'DELEGATECALL', 'STATICCALL'):
             if op in ('CALL', 'CALLCODE'):
                 s0, s1, s2, s3, s4, s5, s6 = stk.pop(), stk.pop(), stk.pop(), stk.pop(), stk.pop(), stk.pop(), stk.pop()
+                if op == 'CALL':
+                    constraints.append(z3.UGE(state.balance, s2))
+                    state.balance -= s2
             elif op == 'DELEGATECALL':
                 s0, s1, s3, s4, s5, s6 = stk.pop(), stk.pop(), stk.pop(), stk.pop(), stk.pop(), stk.pop(), stk.pop()
                 s2 = ctx_or_symbolic('CALLVALUE', ctx, xid)
@@ -1066,7 +1079,8 @@ class SymbolicResult(object):
         if self._simplified:
             return
         self.constraints = [z3.simplify(c) for c in self.constraints]
-        self.sha_constraints = {sha: z3.simplify(sha_value) if not isinstance(sha_value, SymRead) else sha_value for sha, sha_value in self.sha_constraints.items()}
+        self.sha_constraints = {sha: z3.simplify(sha_value) if not isinstance(sha_value, SymRead) else sha_value for
+                                sha, sha_value in self.sha_constraints.items()}
         self._simplified = True
 
     def copy(self):
@@ -1079,7 +1093,9 @@ class SymbolicResult(object):
         self.simplify()
 
         new_constraints = [translate(c, new_xid) for c in self.constraints]
-        new_sha_constraints = {translate(sha, new_xid): translate(sha_value, new_xid)  if not isinstance(sha_value, SymRead) else sha_value.translate(new_xid) for sha, sha_value in
+        new_sha_constraints = {translate(sha, new_xid): translate(sha_value, new_xid) if not isinstance(sha_value,
+                                                                                                        SymRead) else sha_value.translate(
+            new_xid) for sha, sha_value in
                                self.sha_constraints.items()}
         new_state = self.state.copy(new_xid)
 
@@ -1093,7 +1109,6 @@ class CombinedSymbolicResult(object):
         self._sha_constraints = None
         self._storage_constraints = None
         self._states = None
-        self._level = None
         self._idx_dict = None
         self.calls = 0
 
@@ -1102,20 +1117,28 @@ class CombinedSymbolicResult(object):
         self._sha_constraints = None
         self._states = None
 
-    def _combine(self, storage = dict()):
-        storage_subst = []
+    def _combine(self, storage=dict(), initial_balance=None):
+        extra_subst = []
 
         storage_base = z3.K(z3.BitVecSort(256), z3.BitVecVal(0, 256))
-        for k,v in storage.iteritems():
+        for k, v in storage.iteritems():
             storage_base = z3.Store(storage_base, k, v)
         for result in self.results:
-            storage_subst.append((result.state.storage.base, storage_base))
-            storage_base = z3.substitute(result.state.storage.storage, storage_subst)
+            extra_subst.append((result.state.storage.base, storage_base))
+            storage_base = z3.substitute(result.state.storage.storage, extra_subst)
 
-        self._states = [LazySubstituteState(r.state, storage_subst) for r in self.results]
-        self._constraints = [z3.substitute(c, storage_subst) for r in self.results for c in r.constraints]
+        extra_constraints = []
+        if initial_balance is not None:
+            balance_base = z3.BitVecVal(initial_balance, 256)
+            for result in self.results:
+                extra_subst.append((result.state.start_balance, balance_base))
+                balance_base = z3.substitute(result.state.balance, extra_subst)
+
+        self._states = [LazySubstituteState(r.state, extra_subst) for r in self.results]
+        self._constraints = [z3.substitute(c, extra_subst) for r in self.results for c in
+                             r.constraints] + extra_constraints
         self._sha_constraints = {
-            sha: z3.substitute(sha_value, storage_subst) if not isinstance(sha_value, SymRead) else sha_value for r in
+            sha: z3.substitute(sha_value, extra_subst) if not isinstance(sha_value, SymRead) else sha_value for r in
             self.results for sha, sha_value in r.sha_constraints.iteritems()}
 
         self._idx_dict = {r.xid: i for i, r in enumerate(self.results)}
@@ -1127,7 +1150,7 @@ class CombinedSymbolicResult(object):
 
     @property
     def idx_dict(self):
-        if self._level is None:
+        if self._idx_dict is None:
             self._combine()
         return self._idx_dict
 
@@ -1163,7 +1186,6 @@ class CombinedSymbolicResult(object):
         self._constraints = [z3.simplify(c) for c in self.constraints]
         self._sha_constraints = {sha: (z3.simplify(sha_value) if not isinstance(sha_value, SymRead) else sha_value) for
                                  sha, sha_value in self.sha_constraints.items()}
-
 
 
 def simplify_non_const_hashes(expr, sha_ids):
