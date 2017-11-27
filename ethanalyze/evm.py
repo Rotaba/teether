@@ -179,6 +179,15 @@ class SymRead(object):
         if not concrete(size):
             self.size = z3.simplify(self.size)
 
+    def translate(self, new_xid):
+        sym_mem_mem = translate(self.memory.memory, new_xid)
+        sym_mem = SymbolicMemory()
+        sym_mem.memory = sym_mem_mem
+        new_symread = SymRead(sym_mem, 0, 0)
+        new_symread.start = self.start if concrete(self.start) else translate(self.start, new_xid)
+        new_symread.size = self.size if concrete(self.size) else translate(self.size, new_xid)
+        return new_symread
+
 
 class SymbolicStorage(object):
     def __init__(self, xid):
@@ -230,7 +239,42 @@ class SymbolicEVMState(AbstractEVMState):
         new_storage = self.storage.copy(new_xid)
         new_state = SymbolicEVMState(new_xid)
         new_state.storage = new_storage
+        new_state.pc = self.pc
+        new_state.trace = list(self.trace)
         return new_state
+
+
+class LazySubstituteState(object):
+    def __init__(self, state, substitutions):
+        self._state = state
+        self._substitutions = substitutions
+        self.memory = LazySubstituteMemory(self._state.memory, substitutions)
+        self.stack = LazySubstituteStack(self._state.stack, substitutions)
+        self.code = self._state.code
+        self.pc = self._state.pc
+        self.trace = self._state.trace
+
+
+class LazySubstituteMemory(object):
+    def __init__(self, memory, substitutions):
+        self._memory = memory
+        self._substitutions = substitutions
+
+    def __getitem__(self, index):
+        raise NotImplemented()
+
+
+class LazySubstituteStack(object):
+    def __init__(self, stack, substitutions):
+        self._stack = stack
+        self._substitutions = substitutions
+
+    def __getitem__(self, index):
+        r = self._stack[index]
+        if isinstance(index, slice):
+            return [x if concrete(x) else z3.substitute(x, self._substitutions) for x in r]
+        else:
+            return r if concrete(r) else z3.substitute(r, self._substitutions)
 
 
 class Context(object):
@@ -954,7 +998,7 @@ def run_symbolic(program, path, code=None, state=None, ctx=None, inclusive=False
                 raise SymbolicError("Symbolic return-buffer length in %s", op)
 
             ostart = s5 if concrete(s5) else z3.simplify(s5)
-            olen = s6
+            olen = s6 if concrete(s6) else z3.simplify(s6)
 
             if concrete(s1) and s1 == 4:
                 logging.info("Calling precompiled identity contract")
@@ -965,7 +1009,7 @@ def run_symbolic(program, path, code=None, state=None, ctx=None, inclusive=False
                     raise SymbolicError("Precompiled contract %d not implemented", s1)
             else:
                 for i in xrange(olen):
-                    mem[ostart + i] = z3.BitVec('EXT_%d_%d_%d' % (instruction_count, i, xid))
+                    mem[ostart + i] = z3.BitVec('EXT_%d_%d_%d' % (instruction_count, i, xid), 8)
 
             # assume call succeeded
             stk.append(1)
@@ -1015,7 +1059,7 @@ class SymbolicResult(object):
         if self._simplified:
             return
         self.constraints = [z3.simplify(c) for c in self.constraints]
-        self.sha_constraints = {sha: z3.simplify(sha_value) for sha, sha_value in self.sha_constraints.items()}
+        self.sha_constraints = {sha: z3.simplify(sha_value) if not isinstance(sha_value, SymRead) else sha_value for sha, sha_value in self.sha_constraints.items()}
         self._simplified = True
 
     def copy(self):
@@ -1028,7 +1072,7 @@ class SymbolicResult(object):
         self.simplify()
 
         new_constraints = [translate(c, new_xid) for c in self.constraints]
-        new_sha_constraints = {translate(sha, new_xid): translate(sha_value, new_xid) for sha, sha_value in
+        new_sha_constraints = {translate(sha, new_xid): translate(sha_value, new_xid)  if not isinstance(sha_value, SymRead) else sha_value.translate(new_xid) for sha, sha_value in
                                self.sha_constraints.items()}
         new_state = self.state.copy(new_xid)
 
@@ -1052,16 +1096,18 @@ class CombinedSymbolicResult(object):
         self._states = None
 
     def _combine(self):
-        self._states = [r.state for r in self.results]
-        self._constraints = [c for r in self.results for c in r.constraints]
-        self._sha_constraints = {sha: sha_value for r in self.results for sha, sha_value in
-                                 r.sha_constraints.iteritems()}
+        storage_subst = []
 
         storage_base = z3.K(z3.BitVecSort(256), z3.BitVecVal(0, 256))
-        self._storage_constraints = []
         for result in self.results:
-            self._storage_constraints.append(storage_base == result.state.storage.base)
-            storage_base = result.state.storage.storage
+            storage_subst.append((result.state.storage.base, storage_base))
+            storage_base = z3.substitute(result.state.storage.storage, storage_subst)
+
+        self._states = [LazySubstituteState(r.state, storage_subst) for r in self.results]
+        self._constraints = [z3.substitute(c, storage_subst) for r in self.results for c in r.constraints]
+        self._sha_constraints = {
+            sha: z3.substitute(sha_value, storage_subst) if not isinstance(sha_value, SymRead) else sha_value for r in
+            self.results for sha, sha_value in r.sha_constraints.iteritems()}
 
         self._idx_dict = {r.xid: i for i, r in enumerate(self.results)}
 
@@ -1105,10 +1151,10 @@ class CombinedSymbolicResult(object):
         return self.states[-1]
 
     def simplify(self):
+        self._constraints = [z3.simplify(c) for c in self.constraints]
         self._sha_constraints = {sha: (z3.simplify(sha_value) if not isinstance(sha_value, SymRead) else sha_value) for
                                  sha, sha_value in self.sha_constraints.items()}
-        sha_ids = {e.get_id() for e in self.sha_constraints.keys()}
-        self._constraints = [simplify_non_const_hashes(c, sha_ids) for c in self.constraints]
+
 
 
 def simplify_non_const_hashes(expr, sha_ids):

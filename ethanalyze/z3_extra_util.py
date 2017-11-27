@@ -63,6 +63,8 @@ def get_vars_non_recursive(f, include_select=False, include_indices=True):
                 else:
                     rs.add(expr)
                     todo.append(idx)
+            else:
+                todo.extend(expr.children())
         elif z3.is_const(expr):
             if not z3.z3util.is_expr_val(expr):
                 rs.add(expr)
