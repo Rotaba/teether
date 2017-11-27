@@ -110,6 +110,9 @@ def check_model_and_resolve_inner(constraints, sha_constraints):
     s.add(constraints)
     if s.check() != z3.sat:
         raise IntractablePath()
+    else:
+        if not sha_constraints:
+            return s.model()
 
     while True:
         ne_constraints = []
@@ -144,12 +147,6 @@ def check_model_and_resolve_inner(constraints, sha_constraints):
 
 def check_and_model(constraints, sha_constraints, ne_constraints):
     #logging.debug(' ' * 16 + '-' * 16)
-    if not sha_constraints:
-        sol = z3.Solver()
-        sol.add(constraints)
-        if sol.check() != z3.sat:
-            raise IntractablePath()
-        return sol.model()
 
     unresolved = set(sha_constraints.keys())
     sol = z3.Solver()
