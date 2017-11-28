@@ -99,10 +99,10 @@ def check_model_and_resolve(constraints, sha_constraints):
     except UnresolvedConstraints:
         sha_ids = {sha.get_id() for sha in sha_constraints.keys()}
         constraints = [simplify_non_const_hashes(c, sha_ids) for c in constraints]
-        return check_model_and_resolve_inner(constraints, sha_constraints)
+        return check_model_and_resolve_inner(constraints, sha_constraints, second_try=True)
 
 
-def check_model_and_resolve_inner(constraints, sha_constraints):
+def check_model_and_resolve_inner(constraints, sha_constraints, second_try=False):
     #logging.debug('-' * 32)
     extra_constraints = []
 
@@ -129,11 +129,13 @@ def check_model_and_resolve_inner(constraints, sha_constraints):
                 #logging.debug("Hashes MUST be equal: %s and %s", a, b)
                 subst = [(a, b)]
                 extra_constraints = [z3.simplify(z3.substitute(c, subst)) for c in extra_constraints]
-                extra_constraints.append(symread_eq(sha_constraints[a], sha_constraints[b]))
+                extra_constraints.append(symread_eq(symread_substitute(sha_constraints[a], subst), symread_substitute(sha_constraints[b], subst)))
                 constraints = [z3.simplify(z3.substitute(c, subst)) for c in constraints]
+                b_val = symread_substitute(sha_constraints[b], subst)
                 sha_constraints = {z3.substitute(sha, subst): symread_substitute(sha_value, subst) for
                                    sha, sha_value in
-                                   sha_constraints.items()}
+                                   sha_constraints.items() if not sha is a or sha is b}
+                sha_constraints[b] = b_val
                 break
             else:
                 #logging.debug("Hashes COULD be equal: %s and %s", a, b)
@@ -141,11 +143,11 @@ def check_model_and_resolve_inner(constraints, sha_constraints):
         else:
             break
 
-    return check_and_model(constraints + extra_constraints, sha_constraints, ne_constraints)
+    return check_and_model(constraints + extra_constraints, sha_constraints, ne_constraints, second_try=second_try)
 
 
 
-def check_and_model(constraints, sha_constraints, ne_constraints):
+def check_and_model(constraints, sha_constraints, ne_constraints, second_try=False):
     #logging.debug(' ' * 16 + '-' * 16)
 
     unresolved = set(sha_constraints.keys())
@@ -164,6 +166,7 @@ def check_and_model(constraints, sha_constraints, ne_constraints):
             else:
                 progress = True
                 sol.add(c)
+                #sol.add(c)
         unresolved_vars = set(v.get_id() for c in new_todo for v in all_vars[c]) | set(v.get_id() for v in unresolved)
         #logging.debug("Unresolved vars: %s", ','.join(map(str, unresolved_vars)))
         if sol.check() != z3.sat:
@@ -219,6 +222,8 @@ def check_and_model(constraints, sha_constraints, ne_constraints):
     if sol.check() != z3.sat:
         raise IntractablePath()
     if todo:
+        if second_try:
+            raise IntractablePath()
         raise UnresolvedConstraints(unresolved)
     return sol.model()
 
