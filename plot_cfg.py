@@ -15,5 +15,11 @@ if __name__ == '__main__':
     
     mem_limit = 4*1024*1024*1024 # 4GB
     resource.setrlimit(resource.RLIMIT_AS, (mem_limit, mem_limit))
-    p = ethanalyze.project.load(sys.argv[1])
+    if sys.argv[1].endswith('.json'):
+        import json
+        with open(sys.argv[1],'rb') as f:
+            jd = json.load(f)
+        p = ethanalyze.project.Project.from_json(jd)
+    else:
+        p = ethanalyze.project.load(sys.argv[1])
     print p.cfg.to_dot()
