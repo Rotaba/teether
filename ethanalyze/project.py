@@ -14,6 +14,10 @@ def load(path):
     with open(path) as infile:
         return Project(unhexlify(infile.read().strip()))
 
+def load_json(path):
+    import json
+    with open(path) as infile:
+        return Project.from_json(json.load(infile))
 
 class Project(object):
     def __init__(self, code, cfg=None):
