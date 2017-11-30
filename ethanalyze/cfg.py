@@ -312,7 +312,7 @@ class CFG(object):
 
 
     @staticmethod
-    def get_paths(start_ins, loop_limit=1, predicate=lambda st, pred: True):
+    def get_paths(start_ins, predicate=lambda st, pred: True):
 
         def initial_data(ins):
             return ins.addr, ins.bb.start
@@ -326,8 +326,11 @@ class CFG(object):
         def finish_path(path):
             return path[-1] == 0
 
+        old_pred = predicate
+        predicate = lambda st, pred: old_pred(st, pred) and st.count(pred.start) < 3
+
         # TODO: BETTER FIX TO PREVENT INFINITE LOOPS
-        for path in traverse_back(start_ins, 10, initial_data, advance_data, update_data, finish_path,
+        for path in traverse_back(start_ins, None, initial_data, advance_data, update_data, finish_path,
                                   predicate=predicate):
             yield path[::-1]
 

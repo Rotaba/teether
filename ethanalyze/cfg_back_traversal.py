@@ -122,9 +122,7 @@ def traverse_back(start_ins, initial_gas, initial_data, advance_data, update_dat
             #logging.debug('[tr] finished path (%s)', new_data)
             yield new_data
         else:
-            if state.gas == 0:
-                ended_prematurely[state.bb.start] += 1
-            elif state.gas < state.bb.estimate_back_branches:
+            if state.gas is not None and (state.gas == 0 or state.gas < state.bb.estimate_back_branches):
                 ended_prematurely[state.bb.start] += 1
             else:
                 #logging.debug('[tr] continuing path (%s)', new_data)
