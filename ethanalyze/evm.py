@@ -258,6 +258,7 @@ class LazySubstituteState(object):
         self.code = self._state.code
         self.pc = self._state.pc
         self.trace = self._state.trace
+        self.balance = z3.substitute(state.balance, substitutions)
 
 
 class LazySubstituteMemory(object):
@@ -1130,9 +1131,15 @@ class CombinedSymbolicResult(object):
         extra_constraints = []
         if initial_balance is not None:
             balance_base = z3.BitVecVal(initial_balance, 256)
-            for result in self.results:
+        else:
+            balance_base = None
+        for result in self.results:
+            if balance_base is not None:
                 extra_subst.append((result.state.start_balance, balance_base))
                 balance_base = z3.substitute(result.state.balance, extra_subst)
+            else:
+                balance_base = result.state.balance
+
 
         self._states = [LazySubstituteState(r.state, extra_subst) for r in self.results]
         self._constraints = [z3.substitute(c, extra_subst) for r in self.results for c in
