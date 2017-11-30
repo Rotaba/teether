@@ -4,6 +4,7 @@ import numbers
 from binascii import hexlify
 from collections import defaultdict
 
+import itertools
 from z3 import z3, z3util
 
 import utils
@@ -194,17 +195,33 @@ class SymbolicStorage(object):
     def __init__(self, xid):
         self.base = z3.Array('STORAGE_%d' % xid, z3.BitVecSort(256), z3.BitVecSort(256))
         self.storage = self.base
+        self.accesses = list()
 
     def __getitem__(self, index):
+        self.accesses.append(('read', index if concrete(index) else z3.simplify(index)))
         return self.storage[index]
 
     def __setitem__(self, index, v):
+        self.accesses.append(('write', index if concrete(index) else z3.simplify(index)))
         self.storage = z3.Store(self.storage, index, v)
+
+    @property
+    def reads(self):
+        return [a for t,a in self.accesses if t=='read']
+
+    @property
+    def writes(self):
+        return [a for t,a in self.accesses if t == 'write']
+
+    @property
+    def all(self):
+        return [a for t,a in self.accesses]
 
     def copy(self, new_xid):
         new_storage = SymbolicStorage(new_xid)
         new_storage.base = translate(self.base, new_xid)
         new_storage.storage = translate(self.storage, new_xid)
+        new_storage.accesses = [(t, a if concrete(a) else translate(a, new_xid)) for t,a in self.accesses]
         return new_storage
 
 
@@ -1075,6 +1092,7 @@ class SymbolicResult(object):
         self.sha_constraints = sha_constraints
         self.calls = 1
         self._simplified = False
+        self.storage_info = StorageInfo(self)
 
     def simplify(self):
         if self._simplified:
@@ -1102,13 +1120,16 @@ class SymbolicResult(object):
 
         return SymbolicResult(new_xid, new_state, new_constraints, new_sha_constraints)
 
+    def may_read_from(self, other):
+        return self.storage_info.may_read_from(other.storage_info)
+
+
 
 class CombinedSymbolicResult(object):
     def __init__(self):
         self.results = []
         self._constraints = None
         self._sha_constraints = None
-        self._storage_constraints = None
         self._states = None
         self._idx_dict = None
         self.calls = 0
@@ -1174,12 +1195,6 @@ class CombinedSymbolicResult(object):
         return self._sha_constraints
 
     @property
-    def storage_constraints(self):
-        if self._storage_constraints is None:
-            self._combine()
-        return self._storage_constraints
-
-    @property
     def states(self):
         if not self._states:
             self._combine()
@@ -1193,6 +1208,77 @@ class CombinedSymbolicResult(object):
         self._constraints = [z3.simplify(c) for c in self.constraints]
         self._sha_constraints = {sha: (z3.simplify(sha_value) if not isinstance(sha_value, SymRead) else sha_value) for
                                  sha, sha_value in self.sha_constraints.items()}
+
+
+class StorageInfo(object):
+    def __init__(self, result):
+        self.result = result
+        self._vars = dict()
+        self.concrete_reads = set()
+        self.concrete_writes = set()
+        self.symbolic_reads = set()
+        self.symbolic_writes = set()
+        self.symbolic_hash_reads = set()
+        self.symbolic_hash_writes = set()
+        for addr in set(result.state.storage.reads):
+            if concrete(addr):
+                self.concrete_reads.add(addr)
+            else:
+                x_vars = get_vars_non_recursive(addr, True)
+                self._vars[addr] = x_vars
+                if set(x_vars) & set(result.sha_constraints.keys()):
+                    self.symbolic_hash_reads.add(addr)
+                else:
+                    self.symbolic_reads.add(addr)
+        for addr in set(result.state.storage.writes):
+            if concrete(addr):
+                self.concrete_writes.add(addr)
+            else:
+                x_vars = get_vars_non_recursive(addr, True)
+                self._vars[addr] = x_vars
+                if set(x_vars) & set(result.sha_constraints.keys()):
+                    self.symbolic_hash_writes.add(addr)
+                else:
+                    self.symbolic_writes.add(addr)
+
+    def may_read_from(self, other):
+        if not self.symbolic_reads and not other.symbolic_writes:
+            # no side has a non-hash-based symbolic access
+            # => only concrete accesses can intersect
+            # (or hash-based accesses, which we will check later)
+            if self.concrete_reads & other.concrete_writes:
+                return True
+        else:
+            # at least one side has a non-hash-based symbolic access
+            # => if there is at least one concrete or symbolic access
+            # on the other side, the two could be equal
+            # (otherwise we have to look at hash-based accesses, see below)
+            if ((self.symbolic_reads or self.concrete_reads or self.symbolic_hash_reads) and
+                (other.symbolic_writes or other.concrete_writes or other.symbolic_hash_writes)):
+                return True
+
+        if self.symbolic_hash_reads and other.symbolic_hash_writes:
+            for a,b in itertools.product(self.symbolic_hash_reads, other.symbolic_hash_writes):
+                if not ast_eq(a,b):
+                    continue
+                hash_a = list(self._vars[a] & set(self.result.sha_constraints.keys()))
+                hash_b = list(other._vars[b] & set(other.result.sha_constraints.keys()))
+                if len(hash_a) != 1 or len(hash_b) != 1:
+                    # multiple hashes on either side
+                    # => assume they could be equal
+                    return True
+                # only one hash on either side
+                # => check whether these two can actually be equal
+                d_a = self.result.sha_constraints[hash_a[0]]
+                d_b = other.result.sha_constraints[hash_b[0]]
+                if isinstance(d_a, SymRead) or isinstance(d_b, SymRead):
+                    return True
+                if d_a.size() == d_b.size():
+                    return True
+
+        # at this point, we have checked every possible combination
+        # => no luck this time
+        return False
 
 
 def simplify_non_const_hashes(expr, sha_ids):
