@@ -12,7 +12,13 @@ logging.basicConfig(level=logging.INFO)
 
 
 def call_constraints(codepath):
-    p = project.load(codepath)
+    if codepath.endswith('.json'):
+        import json
+        with open(codepath,'rb') as f:
+            jd = json.load(f)
+        p = project.Project.from_json(jd)
+    else:
+        p = project.load(codepath)
     call_ins = p.cfg.filter_ins('CALL')
     if not call_ins:
         logging.info('No CALL instructions')
