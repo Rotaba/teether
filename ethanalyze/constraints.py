@@ -1,7 +1,6 @@
 import copy
 import itertools
 import logging
-from binascii import hexlify
 from collections import defaultdict
 
 from z3 import z3, z3util
@@ -105,7 +104,6 @@ def check_model_and_resolve(constraints, sha_constraints):
 def check_model_and_resolve_inner(constraints, sha_constraints, second_try=False):
     #logging.debug('-' * 32)
     extra_constraints = []
-
     s = z3.SolverFor("QF_ABV")
     s.add(constraints)
     if s.check() != z3.sat:

@@ -1049,8 +1049,7 @@ def run_symbolic(program, path, code=None, state=None, ctx=None, inclusive=False
                 for i in xrange(olen):
                     mem[ostart + i] = z3.BitVec('EXT_%d_%d_%d' % (instruction_count, i, xid), 8)
 
-            # assume call succeeded
-            stk.append(1)
+            stk.append(z3.BitVec('CALLRESULT_%d_%d'%(instruction_count, xid), 256))
         elif op == 'RETURN':
             s0, s1 = stk.pop(), stk.pop()
             if concrete(s0) and concrete(s1):
