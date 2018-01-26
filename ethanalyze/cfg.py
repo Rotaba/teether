@@ -50,8 +50,37 @@ class Instruction(object):
 class BB(object):
     def __init__(self, ins):
         self.ins = ins
+        self.streads = set()   # indices of stack-items that will be read by this BB (0 is the topmost item on stack)
+        self.stwrites = set()  # indices of stack-items that will be written by this BB (0 is the topmost item on stack)
+        self.stdelta = 0
         for i in ins:
             i.bb = self
+            if 0x80 <= i.op <= 0x8f:  # Special handling for DUP
+                ridx = i.op - 0x80 - self.stdelta
+                widx = -1 - self.stdelta
+                if ridx not in self.stwrites:
+                    self.streads.add(ridx)
+                self.stwrites.add(widx)
+            elif 0x90 <= i.op <= 0x9f:  # Special handling for SWAP
+                idx1 = i.op - 0x8f - self.stdelta
+                idx2 = - self.stdelta
+                if idx1 not in self.stwrites:
+                    self.streads.add(idx1)
+                if idx2 not in self.stwrites:
+                    self.streads.add(idx2)
+                self.stwrites.add(idx1)
+                self.stwrites.add(idx2)
+            else:  # assume entire stack is affected otherwise
+                for j in xrange(i.ins):
+                    idx = j - self.stdelta
+                    if idx not in self.stwrites:
+                        self.streads.add(idx)
+                for j in xrange(i.outs):
+                    idx = i.ins - 1 - j - self.stdelta
+                    self.stwrites.add(idx)
+            self.stdelta += i.delta
+        self.streads = {x for x in self.streads if x >= 0}
+        self.stwrites = {x for x in self.stwrites if x >= 0}
         self.start = self.ins[0].addr
         self.pred = set()
         self.succ = set()
@@ -63,7 +92,7 @@ class BB(object):
         self.descendants = set()
         # maintain a set of 'must_visit' contraints to limit
         # backward-slices to only new slices after new egdes are added
-        # initialliy, no constrain is given (= empty set)
+        # initialliy, no constraint is given (= empty set)
         self.must_visit = [set()]
         # also maintain an estimate of how fast we can get from here
         # to the root of the cfg
@@ -186,7 +215,11 @@ class BB(object):
         return self.succ_addrs
 
     def __str__(self):
-        s = 'BB @ %x' % self.start
+        s = 'BB @ %x\tStack %d' % (self.start, self.stdelta)
+        s += '\n'
+        s += 'Stackreads: {%s}' % (', '.join(map(str, sorted(self.streads))))
+        s += '\n'
+        s += 'Stackwrites: {%s}' % (', '.join(map(str, sorted(self.stwrites))))
         if self.pred:
             s += '\n'
             s += '\n'.join('%x ->' % pred.start for pred in self.pred)
