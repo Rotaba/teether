@@ -7,7 +7,7 @@ class TestMain(TestCase):
     def check(self, i):
         assert (main('../test/test%d.contract.code' % i, '0x3cc7c038f7eea1b70014b788b821d675b13b8760', '=1337'))
 
-for i in xrange(1,20):
+for i in xrange(1,22):
     if i == 12:
         # test12.sol is not exploitable
         continue
