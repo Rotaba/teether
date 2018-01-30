@@ -286,15 +286,15 @@ class CFG(object):
                         pred.add_succ(succ, new_succ_path)
                         if not (pred.start, succ.start) in links:
                             #logging.debug('found new link from %x to %x', pred.start, succ.start)
-                            with open('cfg-tmp%d.dot' % len(links), 'w') as outfile:
-                                outfile.write(self.to_dot())
+                            #with open('cfg-tmp%d.dot' % len(links), 'w') as outfile:
+                            #    outfile.write(self.to_dot())
                             new_link = True
                             links.add((pred.start, succ.start))
 
     def __str__(self):
         return '\n\n'.join(str(bb) for bb in self.bbs)
 
-    def to_dot(self):
+    def to_dot(self, minimal=False):
         s = 'digraph g {\n'
         s += '\tsplines=ortho;\n'
         s += '\tnode[fontname="courier"];\n'
@@ -311,14 +311,21 @@ class CFG(object):
             # descendants = 'Descendants: %s' % (', '.join('%x' % addr for addr in sorted(a for a in bb.descendants)))
             # s += '\t%d [shape=box,label=<<b>%x</b>:<br align="left"/>%s<br align="left"/>%s<br align="left"/>%s<br align="left"/>>];\n' % (
             #    bb.start, bb.start, ins_block, ancestors, descendants)
-            s += '\t%d [shape=box,label=<%s<br align="left"/><b>%x</b>:<br align="left"/>%s<br align="left"/>%s<br align="left"/>>];\n' % (
-                bb.start, from_block, bb.start, ins_block, to_block)
+            if not minimal:
+                s += '\t%d [shape=box,label=<%s<br align="left"/><b>%x</b>:<br align="left"/>%s<br align="left"/>%s<br align="left"/>>];\n' % (
+                    bb.start, from_block, bb.start, ins_block, to_block)
+            else:
+                s += '\t%d [shape=box,label=<%s<br align="left"/>>];\n' % (
+                    bb.start, ins_block)
         s += '\n'
         for bb in sorted(self.bbs):
             for succ in sorted(bb.succ):
                 pths = succ.pred_paths[bb]
-                s += '\t%d -> %d [xlabel="%s"];\n' % (
-                    bb.start, succ.start, '|'.join(' -> '.join('%x' % a for a in p) for p in pths))
+                if not minimal:
+                    s += '\t%d -> %d [xlabel="%s"];\n' % (
+                        bb.start, succ.start, '|'.join(' -> '.join('%x' % a for a in p) for p in pths))
+                else:
+                    s += '\t%d -> %d;\n' % (bb.start, succ.start)
         s += '}'
         return s
 
