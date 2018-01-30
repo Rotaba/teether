@@ -510,7 +510,7 @@ def run(program, state=None, code=None, ctx=None, check_initialized=False, trace
                         raise vm_exception('BAD JUMPDEST')
                     continue
             elif op == 'PC':
-                stk.append(state.pc - 1)
+                stk.append(state.pc)
             elif op == 'MSIZE':
                 stk.append(len(mem))
             elif op == 'GAS':
@@ -981,7 +981,7 @@ def run_symbolic(program, path, code=None, state=None, ctx=None, inclusive=False
                         raise IntractablePath()
 
             elif op == 'PC':
-                stk.append(state.pc - 1)
+                stk.append(state.pc)
             elif op == 'MSIZE':
                 stk.append(len(mem))
             elif op == 'GAS':
