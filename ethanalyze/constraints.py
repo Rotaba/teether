@@ -40,15 +40,22 @@ def model_to_calls(model, idx_dict):
         if name.split('_')[0] not in ('CALLDATASIZE', 'CALLDATA', 'CALLVALUE', 'CALLER'):
             continue
         call_index = idx_dict[get_level(name)]
+        call = calls[call_index]
         if name.startswith('CALLDATASIZE'):
-            # ignore for now...
-            pass
+            payload_size = model[v].as_long()
+            if 'payload' in call:
+                call['payload'] = call['payload'][:payload_size]
+            else:
+                call['payload_size'] = payload_size
         elif name.startswith('CALLDATA'):
-            calls[call_index]['payload'] = ''.join(map(chr, array_to_array(model[v])))
+            call['payload'] = ''.join(map(chr, array_to_array(model[v])))
+            if 'payload_size' in call:
+                call['payload'] = call['payload'][:payload_size]
+                del call['payload_size']
         elif name.startswith('CALLVALUE'):
-            calls[call_index]['value'] = model[v].as_long()
+            call['value'] = model[v].as_long()
         elif name.startswith('CALLER'):
-            calls[call_index]['caller'] = model[v].as_long()
+            call['caller'] = model[v].as_long()
         else:
             logging.warning('CANNOT CONVERT %s', name)
 
@@ -107,7 +114,7 @@ def check_model_and_resolve_inner(constraints, sha_constraints, second_try=False
     s = z3.SolverFor("QF_ABV")
     s.add(constraints)
     if s.check() != z3.sat:
-        raise IntractablePath()
+        raise IntractablePath("CHECK","MODEL")
     else:
         if not sha_constraints:
             return s.model()
@@ -164,7 +171,6 @@ def check_and_model(constraints, sha_constraints, ne_constraints, second_try=Fal
             else:
                 progress = True
                 sol.add(c)
-                #sol.add(c)
         unresolved_vars = set(v.get_id() for c in new_todo for v in all_vars[c]) | set(v.get_id() for v in unresolved)
         #logging.debug("Unresolved vars: %s", ','.join(map(str, unresolved_vars)))
         if sol.check() != z3.sat:
@@ -198,7 +204,14 @@ def check_and_model(constraints, sha_constraints, ne_constraints, second_try=Fal
                     size = tmp.as_long()
                     sol.add(c.size == size)
 
-                data = z3.Concat(*c.memory.read(start, size))
+                data = c.memory.read(start, size)
+                if isinstance(data, list):
+                    if len(data)>1:
+                        data = z3.Concat(*data)
+                    elif len(data)==1:
+                        data = data[0]
+                    else:
+                        raise IntractablePath()
                 sha_constraints = dict(sha_constraints)
                 sha_constraints[u] = data
                 unresolved_todo.append(u)

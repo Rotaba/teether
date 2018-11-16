@@ -2,6 +2,7 @@ import logging
 from binascii import unhexlify
 from collections import defaultdict
 
+from ethanalyze.explorer import Explorer
 from ethanalyze.opcodes import external_data
 from .cfg import CFG
 from .disassembly import generate_BBs
@@ -58,48 +59,44 @@ class Project(object):
         cfg = CFG.from_json(json_dict['cfg'], code)
         return Project(code, cfg)
 
-    def filter_ins(self, names):
-        return self.cfg.filter_ins(names)
-
     def run(self, program):
         return run(program, code=self.code)
 
     def run_symbolic(self, path, inclusive=False):
         return run_symbolic(self.prg, path, self.code, inclusive=inclusive)
 
-    def get_constraints(self, instructions, args=None, inclusive=False, predicate=lambda path, pred: True):
+    def get_constraints(self, instructions, args=None, inclusive=False, find_sstore=False):
+        instructions = [ins for ins in instructions if 0 in ins.bb.ancestors|{ins.bb.start}] # only check instructions that have a chance to reach root
+        if not instructions:
+            return
         imap = {ins.addr: ins for ins in instructions}
-        old_pred = predicate
+
+        #for path in self.cfg.get_paths(instructions, predicate=predicate):
+        exp = Explorer(self.cfg)
         if args:
-            # Check if ins.bb is set, as slices include padding instructions (PUSH, POP)
-            interesting_sub_paths = {
-            ins.addr: [[i.bb.start for i in bs if i.bb] for bs in interesting_slices(ins, args)] for ins in
-            instructions}
-
-            # Update predicate to check that a full sub_path is contained in the current path
-            def predicate(path, pred):
-                if not old_pred(path, pred):
-                    return False
-                if set(i.name for i in pred.ins) & set(external_data):
-                    return False
-                return any((set(path) | {pred.start} | pred.ancestors).issuperset(sub_path) for sub_path in
-                           interesting_sub_paths[path[0]])
+            slices = [s + (ins,) for ins in instructions for s in interesting_slices(ins, args, reachable=True)]
         else:
-            def predicate(path, pred):
-                if not old_pred(path, pred):
-                    return False
-                return not set(i.name for i in pred.ins) & set(external_data)
-
-        for path in self.cfg.get_paths(instructions, predicate=predicate):
-            #logging.debug('Path %s', ' -> '.join('%x' % p for p in path))
-            # If this path is NOT a superset of an interesting slice, skip it
-            if args and not any(all(loc in path for loc in sub_path) for sub_path in interesting_sub_paths[path[-1]]):
-                continue
+            # Are we looking for a state-changing path?
+            if find_sstore:
+                sstores = self.cfg.filter_ins('SSTORE', reachable=True)
+                slices = [(sstore,ins) for sstore in sstores for ins in instructions]
+            else:
+                slices = [(ins,) for ins in instructions]
+        for path in exp.find(slices, avoid=external_data):
+            logging.debug('Path %s', ' -> '.join('%x' % p for p in path))
             try:
                 #logging.debug('This could be interesting...')
                 ins = imap[path[-1]]
                 yield ins, path, self.run_symbolic(path, inclusive)
-            except IntractablePath:
+            except IntractablePath as e:
+                bad_path = [i for i in e.trace if i in self.cfg._bb_at] + [e.remainingpath[0]]
+                dd = self.cfg.data_dependence(self.cfg._ins_at[e.trace[-1]])
+                if not any(i.name in ('MLOAD', 'SLOAD') for i in dd):
+                    ddbbs = set(i.bb.start for i in dd)
+                    bad_path_start = next(j for j,i in enumerate(bad_path) if i in ddbbs)
+                    bad_path = bad_path[bad_path_start:]
+                logging.info("Bad path: %s" % (', '.join('%x' % i for i in bad_path)))
+                exp.add_to_blacklist(bad_path)
                 continue
             except ExternalData:
                 continue

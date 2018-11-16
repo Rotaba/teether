@@ -28,7 +28,7 @@ def disass(code, i=0):
         i += 1
         yield Instruction(loc, op, arg)
         # End basic block on STOP, JUMP, JUMPI, RETURN, REVERT, RAISE, or if the following instruction is a JUMPDEST
-        if op in (0x00, 0x56, 0x57, 0xf3, 0xfd, 0xfe) or (i < len(code) and ord(code[i]) == 0x5b):
+        if op in (0x00, 0x56, 0x57, 0xf3, 0xfd, 0xfe, 0xff) or (i < len(code) and ord(code[i]) == 0x5b):
             break
 
 

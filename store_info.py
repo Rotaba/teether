@@ -24,7 +24,7 @@ def store_constraints(codepath):
         logging.info('No STORE instructions')
         return
     logging.info('Found %d STORE instructions' % len(store_ins))
-    for store, path, r in p.get_constraints(store_ins, [1]):
+    for store, path, r in p.get_constraints(store_ins):
         r.simplify()
         if len(r.state.stack) < 2:
             logging.error('Stack underflow?? Trace: %s', ', '.join('%x' % i for i in r.state.trace))

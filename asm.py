@@ -1,5 +1,5 @@
 #!/usr/bin/env python2.7
-
+import sys
 from binascii import unhexlify, hexlify
 
 import ethanalyze
@@ -21,6 +21,7 @@ def assemble(code):
             continue
         if tokens[0] != 'PUSH':
             if tokens[0] not in ethanalyze.opcodes.reverse_opcodes:
+                print >> sys.stderr, 'Unknown instruction "%s"'%tokens[0]
                 continue
             instructions.append((chr(ethanalyze.opcodes.reverse_opcodes[tokens[0]]), '', label))
         elif tokens[0] == 'PUSH':

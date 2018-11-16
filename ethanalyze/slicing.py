@@ -72,7 +72,7 @@ def advance_slice(slicing_state, memory_info):
             slice_candidate = True
         if slice_candidate:
             add_to_slice = False
-            if 0x80 <= ins.op <= 0x8f:  # Special handling for DUP
+            if 0x80 <= ins.op <= 0x8f:  # Special handling for DUPa
                 if stacksize - 1 in taintmap:
                     add_to_slice = True
                     in_idx = ins.op - 0x7f
@@ -121,10 +121,10 @@ def advance_slice(slicing_state, memory_info):
                         [])
 
 
-def backward_slice(ins, taint_args=None, memory_info=None, initial_gas=10, must_visits=[]):
+def backward_slice(ins, taint_args=None, memory_info=None, initial_gas=10, must_visits=[], reachable=False):
     #logging.debug('backward_slice called')
     if ins.ins == 0:
-        return
+        return []
     if taint_args:
         taintmap = set((ins.ins - 1) - i for i in taint_args)
     else:
@@ -155,9 +155,18 @@ def backward_slice(ins, taint_args=None, memory_info=None, initial_gas=10, must_
         return not slicing_state.taintmap and not slicing_state.memory_taint
 
     #logging.debug('Before loop')
-    return [r.backward_slice[::-1] for r in traverse_back([ins], initial_gas, initial_data, advance_data, update_data, finish_path, must_visits)]
+    slices = [r.backward_slice[::-1] for r in traverse_back([ins], initial_gas, initial_data, advance_data, update_data, finish_path, must_visits)]
+    if not reachable:
+        return slices
+    else:
+        filtered_slices = []
+        for slice in slices:
+            first_bb = next(i.bb for i in slice if i.bb)
+            if 0 in first_bb.ancestors|{first_bb.start}:
+                filtered_slices.append(slice)
+        return filtered_slices
 
 
-def interesting_slices(instruction, args=None):
-    return [bs for bs in backward_slice(instruction, args) if any(
+def interesting_slices(instruction, args=None, reachable=False):
+    return [bs for bs in backward_slice(instruction, args, reachable=reachable) if any(
         ins.name in potentially_user_controlled for ins in bs)]

@@ -16,5 +16,7 @@ for i in xrange(1,22):
     setattr(TestMain, 'test_%02d'%i, lambda_wrap(i))
 
 
-if __name__ == '__main__':
-    unittest.main()
+
+
+#if __name__ == '__main__':
+#    unittest.main()

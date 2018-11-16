@@ -7,3 +7,4 @@ from . import memory
 from . import opcodes
 from . import project
 from . import slicing
+from . import explorer

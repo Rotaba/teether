@@ -43,7 +43,9 @@ class SymbolicError(Exception):
 
 
 class IntractablePath(Exception):
-    pass
+    def __init__(self, trace=[], remainingpath=[]):
+        self.trace = tuple(trace)
+        self.remainingpath = tuple(remainingpath)
 
 
 class vm_exception(Exception):
@@ -955,16 +957,22 @@ def run_symbolic(program, path, code=None, state=None, ctx=None, inclusive=False
                 continue
             elif op == 'JUMPI':
                 s0, s1 = stk.pop(), stk.pop()
+                next_target = path[0]
                 if concrete(s1):
                     if s1:
                         if not concrete(s0):
                             raise SymbolicError('Symbolic jump target')
+                        if s0 != next_target and state.pc + 1 == next_target:
+                            raise IntractablePath(state.trace, path)
                         state.pc = s0
                         if state.pc >= len(state.code) or not program[state.pc].name == 'JUMPDEST':
                             raise vm_exception('BAD JUMPDEST')
                         continue
+                    else:
+                        if concrete(s0):
+                            if state.pc + 1 != next_target and s0 == next_target:
+                                raise IntractablePath(state.trace, path)
                 else:
-                    next_target = path[0]
                     if state.pc + 1 == next_target:
                         if not (concrete(s0) and s0 == next_target):
                             constraints.append(s1 == 0)
@@ -978,7 +986,7 @@ def run_symbolic(program, path, code=None, state=None, ctx=None, inclusive=False
                     elif not concrete(s0):
                         raise SymbolicError('Symbolic jump target')
                     else:
-                        raise IntractablePath()
+                        raise IntractablePath(state.trace, path)
 
             elif op == 'PC':
                 stk.append(state.pc)
@@ -1026,10 +1034,10 @@ def run_symbolic(program, path, code=None, state=None, ctx=None, inclusive=False
                     constraints.append(z3.UGE(state.balance, s2))
                     state.balance -= s2
             elif op == 'DELEGATECALL':
-                s0, s1, s3, s4, s5, s6 = stk.pop(), stk.pop(), stk.pop(), stk.pop(), stk.pop(), stk.pop(), stk.pop()
+                s0, s1, s3, s4, s5, s6 = stk.pop(), stk.pop(), stk.pop(), stk.pop(), stk.pop(), stk.pop()
                 s2 = ctx_or_symbolic('CALLVALUE', ctx, xid)
             elif op == 'STATICCALL':
-                s0, s1, s3, s4, s5, s6 = stk.pop(), stk.pop(), stk.pop(), stk.pop(), stk.pop(), stk.pop(), stk.pop()
+                s0, s1, s3, s4, s5, s6 = stk.pop(), stk.pop(), stk.pop(), stk.pop(), stk.pop(), stk.pop()
                 s2 = 0
 
             if not concrete(s6):
@@ -1056,7 +1064,7 @@ def run_symbolic(program, path, code=None, state=None, ctx=None, inclusive=False
                 mem.extend(s0, s1)
             state.success = True
             if path:
-                raise IntractablePath()
+                raise IntractablePath(state.trace, path)
             return SymbolicResult(xid, state, constraints, sha_constraints)
         # Revert opcode (Metropolis)
         elif op == 'REVERT':
@@ -1065,20 +1073,20 @@ def run_symbolic(program, path, code=None, state=None, ctx=None, inclusive=False
                 raise SymbolicError('symbolic memory index')
             mem.extend(s0, s1)
             if path:
-                raise IntractablePath()
+                raise IntractablePath(state.trace, path)
             return SymbolicResult(xid, state, constraints, sha_constraints)
         # SUICIDE opcode (also called SELFDESTRUCT)
         elif op == 'SUICIDE':
             s0 = stk.pop()
             state.success = True
             if path:
-                raise IntractablePath()
+                raise IntractablePath(state.trace, path)
             return SymbolicResult(xid, state, constraints, sha_constraints)
 
         state.pc += 1
 
     if path:
-        raise IntractablePath()
+        raise IntractablePath(state.trace, path)
     state.success = True
     return SymbolicResult(xid, state, constraints, sha_constraints)
 
@@ -1159,7 +1167,6 @@ class CombinedSymbolicResult(object):
                 balance_base = z3.substitute(result.state.balance, extra_subst)
             else:
                 balance_base = result.state.balance
-
 
         self._states = [LazySubstituteState(r.state, extra_subst) for r in self.results]
         self._constraints = [z3.substitute(c, extra_subst) for r in self.results for c in
