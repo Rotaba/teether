@@ -612,6 +612,7 @@ def run_symbolic(program, path, code=None, state=None, ctx=None, inclusive=False
     max_timestamp = (datetime.datetime(2020, 1, 1) - datetime.datetime(1970, 1, 1)).total_seconds()
     ctx['CODESIZE-ADDRESS'] = len(code)
     calldata = z3.Array('CALLDATA_%d' % xid, z3.BitVecSort(256), z3.BitVecSort(8))
+    calldatasize = z3.BitVec('CALLDATASIZE_%d' % xid, 256)
     instruction_count = 0
     state.balance += ctx_or_symbolic('CALLVALUE', ctx, xid)
     while state.pc in program:
@@ -834,21 +835,21 @@ def run_symbolic(program, path, code=None, state=None, ctx=None, inclusive=False
                 stk.append(ctx_or_symbolic('CALLVALUE', ctx, xid))
             elif op == 'CALLDATALOAD':
                 s0 = stk.pop()
+                constraints.append(z3.UGE(calldatasize, s0+32))
                 if not concrete(s0):
                     constraints.append(z3.ULT(s0, MAX_CALLDATA_SIZE))
                 stk.append(z3.Concat([calldata[s0 + i] for i in xrange(32)]))
             elif op == 'CALLDATASIZE':
-                stk.append(z3.BitVec('CALLDATASIZE_%d' % xid, 256))
+                stk.append(calldatasize)
             elif op == 'CALLDATACOPY':
                 mstart, dstart, size = stk.pop(), stk.pop(), stk.pop()
+                constraints.append(z3.UGE(calldatasize, dstart + size))
                 if not concrete(dstart):
                     constraints.append(z3.ULT(dstart, MAX_CALLDATA_SIZE))
                 if concrete(size):
                     for i in xrange(size):
                         mem[mstart + i] = calldata[dstart + i]
                 else:
-                    calldatasize = z3.BitVec('CALLDATASIZE_%d' % xid, 256)
-                    constraints.append(z3.UGE(calldatasize, dstart + size))
                     constraints.append(z3.ULT(size, MAX_CALLDATA_SIZE))
                     for i in xrange(MAX_CALLDATA_SIZE):
                         mem[mstart + i] = z3.If(size < i, mem[mstart + i], calldata[dstart + i])
