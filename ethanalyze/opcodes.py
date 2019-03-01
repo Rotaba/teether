@@ -1,4 +1,8 @@
 # schema: [opcode, ins, outs, gas]
+#The table tells us
+# input arguments; how many arguments each opcode pops off the stack when executed - ex: add(a,b)
+# output arguments; how many arguments each opcode pushes back onto the stack when executed - ex: add(a,b)=a+b
+# as well as how much gas is consumed.
 opcodes = {
     0x00: ['STOP', 0, 0, 0],
     0x01: ['ADD', 2, 1, 3],
@@ -154,3 +158,6 @@ potentially_user_controlled = ['ORIGIN', 'CALLER', 'CALLVALUE', 'CALLDATALOAD', 
                                'EXTCODESIZE', 'EXTCODECOPY', 'MLOAD', 'SLOAD']
 
 external_data = ['RETURNDATACOPY', 'RETURNDATASIZE', 'EXTCODESIZE', 'EXTCODECOPY']
+
+has_address_in_ins = {'BALANCE': 0 , 'EXTCODESIZE': 0, 'EXTCODECOPY': 0, 'CALL': 1, 'CALLCODE': 1, 'DELEGATECALL': 1,
+                      'STATICCALL': 1, 'SELFDESTRUCT': 0, 'SUICIDE': 0}

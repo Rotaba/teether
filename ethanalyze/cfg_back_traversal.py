@@ -133,7 +133,8 @@ def traverse_back(start_ins, initial_gas, initial_data, advance_data, update_dat
     if total_ended:
         logging.info("%d paths that ended prematurely due to branches: %s", total_ended, ', '.join('%x: %d'%(k,v) for k,v in ended_prematurely.iteritems()))
     else:
-        logging.info("Finished all paths")
+        # logging.info("Finished all paths")
+        pass
 
 
 def minimize(must_visits):

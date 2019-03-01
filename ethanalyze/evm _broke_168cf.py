@@ -610,6 +610,107 @@ def is_true(cond):
 def addr(expr):
     return expr & (2 ** 160 - 1)
 
+#R:
+def symb_read_from_mem(constraints, memory, symb_value, symb_ptr, symb_size, name):
+    if concrete(symb_ptr) and concrete(symb_size):
+        if (symb_ptr == 0 and symb_size == 0):  # just a fallback function
+            # logging.info("@@@@@_EVM: %s: symb_ptr and symb_size are ZERO? they're %s and %s\n" % (name, symb_ptr, symb_size))
+            # symb_to = None
+            return
+        logging.info("_EVM: %s: concrete(symb_ptr) and concrete(symb_size)" % name)
+        for i in xrange(symb_size):
+            symb_value = z3.Store(symb_value, i, z3.Select(memory, symb_ptr+i))
+
+    # s3 and/or s4 are Symoblic
+    elif not concrete(symb_ptr) and not concrete(symb_size):
+        logging.info(
+            "@@@@@@@_EVM: %s: not concrete(symb_ptr) and not concrete(symb_size) they're %s and %s\n" % (name, symb_ptr, symb_size))
+    elif not concrete(symb_ptr):
+        logging.info(
+            "@$@$@$@$@_EVM: %s: not concrete(symb_ptr) it's %s\n" % (name, symb_ptr))
+        # for i in xrange(symb_size):
+        #     symb_value = z3.Store(symb_value, i, z3.Select(memory, symb_ptr+i))
+    elif not concrete(symb_size):
+        logging.info(
+            "_EVM: %s: not concrete(symb_size) it's %s\n" % (name, symb_size))
+        # solution = try_to_solve(constraints, symb_size)
+        # if (solution != None):
+        #     for i in xrange(solution.as_long()):
+        #         symb_to = z3.Store(symb_to, i, z3.Select(mem_from, symb_ptr + i))
+        #     logging.info(
+        #             "_EVM: %s: try_to_solve result is %s\n" % (name, solution))
+        # else:
+        #     logging.info(
+        #             "@$@$@$@$@_EVM: %s: can't solve constrains - ABORT\n" % name )
+        #     return
+    else:
+        logging.info(
+            "@@@@#$%#&^*(^*^%@#$@@@_EVM: %s: SANITY CHECK FAILED: something is wrong\n\n\n" % name)
+    # return symb_to
+# R:
+def symb_write_to_target(constraints, symb_value, write_target, symb_ptr, symb_size, name):
+    if concrete(symb_ptr) and concrete(symb_size):
+        if (symb_ptr == 0 and symb_size == 0):  # just a fallback function
+            # logging.info("@@@@@_EVM: %s: symb_ptr and symb_size are ZERO? they're %s and %s\n" % (name, symb_ptr, symb_size))
+            # symb_to = None
+            return
+        logging.info("_EVM: %s: concrete(symb_ptr) and concrete(symb_size)" % name)
+        for i in xrange(symb_size):
+            write_target = z3.Store(write_target, symb_ptr+i, z3.Select(symb_value, i))
+
+    # s3 and/or s4 are Symoblic
+    elif not concrete(symb_ptr) and not concrete(symb_size):
+        logging.info(
+            "@@@@@@@_EVM: %s: not concrete(symb_ptr) and not concrete(symb_size) they're %s and %s\n" % (name, symb_ptr, symb_size))
+        for i in xrange(symb_size):
+            write_target = z3.Store(write_target, symb_ptr+i, z3.Select(symb_value, i))
+    elif not concrete(symb_ptr):
+        logging.info(
+            "@$@$@$@$@_EVM: %s: not concrete(symb_ptr) it's %s\n" % (name, symb_ptr))
+    elif not concrete(symb_size):
+        logging.info(
+            "@$@$@$@$@_EVM: %s: not concrete(symb_size) it's %s\n" % (name, symb_size))
+        # solution = try_to_solve(constraints, symb_size)
+        # if (solution != None):
+        #     for i in xrange(solution.as_long()):
+        #         mem_to = z3.Store(mem_to, symb_ptr + i, z3.Select(symb_from, i))
+        #     logging.info(
+        #             "_EVM: %s: try_to_solve result is %s\n" % (name, solution))
+        # else:
+        #     logging.info(
+        #             "@$@$@$@$@_EVM: %s: can't solve constrains - ABORT\n" % (name))
+        #     return
+
+    else:
+        logging.info(
+            "@@@@#$%#&^*(^*^%@#$@@@_EVM: %s: SANITY CHECK FAILED: something is wrong\n\n\n" % name)
+    # return mem_to
+
+def try_to_solve(constrains, target):
+    s = z3.SolverFor("QF_ABV")
+    constraints_of_target = []
+    if (len(constrains) == 0):
+        logging.info(
+            "_EVM: can't try_to_solve because there are no constraints" % target)
+        return None
+    for i in constrains:
+        if (str(target) in str(i)):
+            constraints_of_target.append(i)
+    s.add(constraints_of_target)
+    if s.check() != z3.sat:
+        # raise IntractablePath("CHECK", "MODEL")
+        logging.info(
+            "@@@@#$%#&^*(^*^%@#$@@@_EVM: can't resolve the symbolic target" % target)
+        return None
+    else:  # check is validand there are no sha3 constrains
+        m = s.model()
+        if (m[target] != None):
+            return m[target]
+        else:
+            logging.info(
+                "#!@#!@!@#_EVM: Solved constrains but it's a TypeNone target = %s" % target)
+
+
 # EVM func for symbolic execution
 def run_symbolic(program, path, code=None, state=None, ctx=None, inclusive=False, term_on_DC=False, storage_index=None):
     # MAX_CALLDATA_SIZE = 512
@@ -645,88 +746,35 @@ def run_symbolic(program, path, code=None, state=None, ctx=None, inclusive=False
     state.balance += ctx_or_symbolic('CALLVALUE', ctx, xid)
 
     #INPUT_ RETURN ARGS check
-    #check if this is run on callee
-    if (state.call_args != None and state.callee_addr == 1):
-         #@callee @callee @callee @callee @callee @callee @callee @callee @callee
-        if (state.input_value != None): #sanity check
-            #memory declaration looks like this; self.memory = z3.K(z3.BitVecSort(256), z3.BitVecVal(0, 8))
-            #input_value comes from memory -> r_return.state.input_value = (mem[s3: s3 + s4])
-            input_ptr = state.call_args[3]
-            input_size = state.call_args[4]
+    if (state.call_args != None):
+        # check if this is run on callee
+        if (state.callee_addr == 1):
             calldata = z3.Array('calleeCALLDATA_%d' % xid, z3.BitVecSort(256), z3.BitVecSort(8))
-            # calldata = state.input_value
-            logging.info("_EVM: callee: z3.Store-ing input_value into calleeCALLDATA_%d" % xid)
-
-            if (not input_ptr and not input_size): #just a fallback function
-                logging.info("@@@@@_EVM: callee: input_value/size is ZERO??? calleeCALLDATA_%d" % xid)
-                # z3.Store(calldata, 0, 0)
-                pass
-
-            # used to try to create a link OG_CALLDATA <- calleeCALLDATA
-            og_calldata = z3.Array('CALLDATA_%d' % xid, z3.BitVecSort(256), z3.BitVecSort(8))
-
-            for i in xrange(input_size):
-                # logging.info("_EVM: state.input_value[%d]: %s" % (i, state.input_value[i]))
-                #simply copy into calleeCALLDATA todo this doens't actually copy input into callee_CALLDATA - does it?
-                #fix;
-                # calldata = z3.Store(calldata, i, state.input_value[i])
-                calldata = z3.Store(calldata, i, z3.Select(state.input_value, i))
-
-                # old code;
-                # z3.Store(calldata, i, state.input_value[i])
-                # if (str(state.input_value[i]).split('_')[0] == 'CALLDATA'):
-                #     #get index in og_CALLDATA
-                #     og_index = str(state.input_value[i]).split('_')[1][len('[') + 1:-len(']')]
-                #     # og_index = get_index_from_string(str(state.input_value[i]))
-                #     constraints.append(z3.Select(calldata, i) == z3.Select(og_calldata, og_index))
-
-
-            # #value
-            #TODO calleeCALLVALUE should also reflect the .value being passed if this call is a payable, alos the .caller/.value diff
-            #now size
             calldatasize = z3.BitVec('calleeCALLDATASIZE_%d' % xid, 256)
-            # constraints.append(z3.UGE(calldatasize, input_size))
-            # todo could we use a concrete ==?
-            # constraints.append(calldatasize == input_size)
+            if (state.input_value != None): #sanity check
+                #memory declaration looks like this; self.memory = z3.K(z3.BitVecSort(256), z3.BitVecVal(0, 8))
+                #input_value comes from memory -> r_return.state.input_value = (mem[s3: s3 + s4])
+                s3 = state.call_args[3]
+                s4 = state.call_args[4]
+                # def conc_symb_read_write(symb_from, symb_to, symb_ptr, symb_size, name):
+                #althoguh this is not a read form mem; I can reuse this code with ptr = 0
+                symb_write_to_target(constraints, state.input_value, calldata, 0, s4, "callee:input_value_into_calldata")
 
-            #implicit example of og_CALLDATA elements tracking for example 11
-            # for i in range(16,36): #range rungs inclusive first index, but exlusive last, like [x:y]
-            #     constraints.append(z3.Select(calldata, i) == z3.Select(og_calldata, i))
-        else:
-            # R: save it to state
-            logging.info("_EVM: callee: start exec on callee but NO state.INPUT_value!")
+            else: #(state.call_args != None and state.callee_addr == 1)
+                # R: save it to state
+                logging.info("_EVM: callee: start exec on callee but NO state.INPUT_value!")
 
-    # check if this is run on TAIL
-    if (state.call_args != None and state.callee_addr != 1):
-        # TAIL # TAIL # TAIL # TAIL # TAIL # TAIL # TAIL # TAIL # TAIL # TAIL # TAIL # TAIL # TAIL
-        return_ptr = state.call_args[5]
-        return_size = state.call_args[6]
-        if (state.return_value != None): #i.e. tehres a return and WE ACTUALLY ASKED FOR IT! -> size >0
-            # memory declaration looks like this; self.memory = z3.K(z3.BitVecSort(256), z3.BitVecVal(0, 8))
-            # input_value comes from memory -> r_return.state.return_value = (mem[s0: s0 + s1])
-            logging.info(
-                "_EVM: CALLER: state.memory[]-ing return_value in the CALLER_%d_tail's memory before the exec" % xid)
-            if(not return_ptr and not return_size): #we dont expect a return; jsut drop it
-                pass
-            # need to copy the return_value into the requested memory slot
+        # check if this is run on TAIL
+        elif(state.callee_addr != 1): #-> # TAIL # TAIL # TAIL # TAIL # TAIL # TAIL # TAIL # TAIL # TAIL # TAIL # TAIL # TAIL # TAIL
 
-            else:# elif (return_size >= len(state.return_value)):
-                for i in xrange(return_size):
-                    # logging.info("_EVM: state.return_value[%d]: %s" % (i, state.return_value[i]))
-                    # simply copy into calleeCALLDATA
-                    # z3.Store(calldata, i, state.input_value[i])
-                    #todo should I be extending memory here?
-                    state.memory[return_ptr+i] = state.return_value[i]
-            # else: #ret is bigger then the allocated ret size...
-            #     for i in xrange(len(state.return_value)):
-            #         # logging.info("_EVM: state.return_value[%d]: %s" % (i, state.return_value[i]))
-            #         # simply copy into calleeCALLDATA
-            #         # z3.Store(calldata, i, state.input_value[i])
-            #         state.memory[return_ptr+i] = state.return_value[i]
-            #     # logging.info("$$$$$$$$$$$$:_EVM: CALLER: tail return_value is bigger then the allocated return_size ")
-
-        else:
-            logging.info("_EVM: CALLER: tail but NO state.RETURN_value present - is this a return-less path?")
+            return_ptr = state.call_args[5]
+            return_size = state.call_args[6]
+            if (state.return_value != None): #i.e. theres a return and WE ACTUALLY ASKED FOR IT! -> size >0
+                symb_write_to_target(constraints, state.return_value, state.memory.memory, return_ptr, return_size, "CALLER:return_value_into_memory")
+            else:
+                logging.info("_EVM: CALLER: tail but NO state.RETURN_value present - is this a return-less path?")
+        else: #sanity check
+            logging.info("!@#!@#!@!#!@#!@#!@#!@#_EVM: there's ARGS but addr is not set?!@!#!@#!#!")
 
     #back to normal exec
     while state.pc in program:
@@ -1185,37 +1233,43 @@ def run_symbolic(program, path, code=None, state=None, ctx=None, inclusive=False
                     # save addr for combined_exploit()
                     r_return.state.callee_addr = s1
                     r_return.state.call_args = (s0, s1, s2, s3, s4, s5, s6)
-                    if concrete(s3) and concrete(s4):
-                        #memory DEF;self.memory = z3.K(z3.BitVecSort(256), z3.BitVecVal(0, 8))
-                        #new symb  impl
-                        # storage_base = z3.K(z3.BitVecSort(256), z3.BitVecVal(0, 256))  # init a Z3 object
-                        # # populate the object with the given storage
-                        # for k, v in storage.iteritems():
-                        #     # J:
-                        #     storage_base = z3.Store(storage_base, k,
-                        #                             v)  # z3 array representation - store v on index k at storage_base
-                        #
 
-                        i_v = z3.K(z3.BitVecSort(256), z3.BitVecVal(0, 8))
-                        for i in range(0,s4): #store memoryslice into i_v
-                            i_v = z3.Store(i_v, i, z3.Select(mem.memory, s3+i))
 
-                        r_return.state.input_value = i_v
-                        #old concrete impl
-                        # r_return.state.input_value = (mem[s3: s3 + s4])
-                        logging.info("_EVM:term_on_DC: premature termination because of DELEGATECALL - saved input_value")
-                    # else: # s3 and/or s4 are Symoblic
-                    elif not concrete(s3) and not concrete(s4):
-                        logging.info("@@@@@@@_EVM:term_on_DC: CAN'T save input_value in return_r beacsue s3 AND s4 are NOT concrete\n")
-                    elif not concrete(s3):
-                        logging.info(
-                            "@$@$@$@$@_EVM:term_on_DC: CAN'T save input_value in return_r beacsue s3=PTR is NOT concrete\n")
-                    elif not concrete(s4):
-                        logging.info(
-                            "@$@$@$@$@_EVM:term_on_DC: CAN'T save input_value in return_r beacsue s4=SIZE is NOT concrete\n")
-                    else:
-                        logging.info(
-                            "@@@@#$%#&^*(^*^%@#$@@@_EVM:term_on_DC: SANITY CHECK FAILED: something is wrong\n\n\n")
+
+                    r_return.state.input_value = z3.K(z3.BitVecSort(256), z3.BitVecVal(0, 8))
+                    symb_read_from_mem(constraints, state.memory.memory, r_return.state.input_value, s3, s4,
+                                         "term_on_DC:memory_into_input_value")
+                    # if concrete(s3) and concrete(s4):
+                    #     #memory DEF;self.memory = z3.K(z3.BitVecSort(256), z3.BitVecVal(0, 8))
+                    #     #new symb  impl
+                    #     # storage_base = z3.K(z3.BitVecSort(256), z3.BitVecVal(0, 256))  # init a Z3 object
+                    #     # # populate the object with the given storage
+                    #     # for k, v in storage.iteritems():
+                    #     #     # J:
+                    #     #     storage_base = z3.Store(storage_base, k,
+                    #     #                             v)  # z3 array representation - store v on index k at storage_base
+                    #     #
+                    #
+                    #     i_v = z3.K(z3.BitVecSort(256), z3.BitVecVal(0, 8))
+                    #     for i in range(0,s4): #store memoryslice into i_v
+                    #         i_v = z3.Store(i_v, i, z3.Select(mem.memory, s3+i))
+                    #
+                    #     r_return.state.input_value = i_v
+                    #     #old concrete impl
+                    #     # r_return.state.input_value = (mem[s3: s3 + s4])
+                    #     logging.info("_EVM:term_on_DC: premature termination because of DELEGATECALL - saved input_value")
+                    # # else: # s3 and/or s4 are Symoblic
+                    # elif not concrete(s3) and not concrete(s4):
+                    #     logging.info("@@@@@@@_EVM:term_on_DC: CAN'T save input_value in return_r beacsue s3 AND s4 are NOT concrete\n")
+                    # elif not concrete(s3):
+                    #     logging.info(
+                    #         "@$@$@$@$@_EVM:term_on_DC: CAN'T save input_value in return_r beacsue s3=PTR is NOT concrete\n")
+                    # elif not concrete(s4):
+                    #     logging.info(
+                    #         "@$@$@$@$@_EVM:term_on_DC: CAN'T save input_value in return_r beacsue s4=SIZE is NOT concrete\n")
+                    # else:
+                    #     logging.info(
+                    #         "@@@@#$%#&^*(^*^%@#$@@@_EVM:term_on_DC: SANITY CHECK FAILED: something is wrong\n\n\n")
 
                     return r_return
                 else:
@@ -1259,36 +1313,39 @@ def run_symbolic(program, path, code=None, state=None, ctx=None, inclusive=False
 
             r_return = SymbolicResult(xid, state, constraints, sha_constraints, initial_path, path)
             if (state.callee_addr == 1): #it's callee
-                if concrete(s0) and concrete(s1):
-                #     r_return.state.return_value = (mem[s0: s0 + s1])
-                #     logging.info("_EVM: callee: legit termination because of RETURN ; saved RETURN_value: %s ..." % str(mem[s0: s0 + s1])[:10])
-                # else:
-                #     logging.info("$$$$$$$$$$$$$_EVM: Can't save a return_value! becasue it's symbolic? %s ... $$$$$$$$$$$$$$$$$$" % str(mem[s0: s0 + s1])[:10])
+                # if concrete(s0) and concrete(s1):
+                # #     r_return.state.return_value = (mem[s0: s0 + s1])
+                # #     logging.info("_EVM: callee: legit termination because of RETURN ; saved RETURN_value: %s ..." % str(mem[s0: s0 + s1])[:10])
+                # # else:
+                # #     logging.info("$$$$$$$$$$$$$_EVM: Can't save a return_value! becasue it's symbolic? %s ... $$$$$$$$$$$$$$$$$$" % str(mem[s0: s0 + s1])[:10])
+                #
 
+                r_return.state.return_value = z3.K(z3.BitVecSort(256), z3.BitVecVal(0, 8))
+                symb_read_from_mem(constraints, state.memory.memory, r_return.state.return_value, s0, s1,
+                                 "callee: RETURN :memory_into_return_value")
 
-                    r_v = z3.K(z3.BitVecSort(256), z3.BitVecVal(0, 8))
-                    for i in range(0, s1):  # store memoryslice into i_v
-                        r_v = z3.Store(r_v, i, z3.Select(mem.memory, s0 + i))
-
-                    r_return.state.return_value = r_v
-                    # old concrete impl
-                    # r_return.state.return_value = (mem[s3: s3 + s4])
-                    logging.info("_EVM:term_on_DC: premature termination because of RETURN ; saved RETURN_value")
-                # else:  # s3 and/or s4 are Symoblic
-                elif not concrete(s0) and not concrete(s1):
-                    logging.info(
-                        "@@@@@@@_EVM:RETURN: CAN'T save return_value in return_r beacsue s0 AND s1 are NOT concrete\n")
-                elif not concrete(s0):
-                    logging.info(
-                        "@$@$@$@$@_EVM:RETURN: CAN'T save return_value in return_r beacsue s0=PTR is NOT concrete\n")
-                elif not concrete(s1):
-                    logging.info(
-                        "@$@$@$@$@_EVM:RETURN: CAN'T save return_value in return_r beacsue s1=SIZE is NOT concrete\n")
-                else:
-                    logging.info(
-                        "@@@@#$%#&^*(^*^%@#$@@@_EVM:term_on_DC: SANITY CHECK FAILED: something is wrong\n\n\n")
-            else:
-                logging.info("_EVM: CALLER: legit termination because of RETURN")
+            #         for i in range(0, s1):  # store memoryslice into i_v
+            #             r_v = z3.Store(r_v, i, z3.Select(mem.memory, s0 + i))
+            #
+            #         r_return.state.return_value = r_v
+            #         # old concrete impl
+            #         # r_return.state.return_value = (mem[s3: s3 + s4])
+            #         logging.info("_EVM:term_on_DC: premature termination because of RETURN ; saved RETURN_value")
+            #     # else:  # s3 and/or s4 are Symoblic
+            #     elif not concrete(s0) and not concrete(s1):
+            #         logging.info(
+            #             "@@@@@@@_EVM:RETURN: CAN'T save return_value in return_r beacsue s0 AND s1 are NOT concrete\n")
+            #     elif not concrete(s0):
+            #         logging.info(
+            #             "@$@$@$@$@_EVM:RETURN: CAN'T save return_value in return_r beacsue s0=PTR is NOT concrete\n")
+            #     elif not concrete(s1):
+            #         logging.info(
+            #             "@$@$@$@$@_EVM:RETURN: CAN'T save return_value in return_r beacsue s1=SIZE is NOT concrete\n")
+            #     else:
+            #         logging.info(
+            #             "@@@@#$%#&^*(^*^%@#$@@@_EVM:term_on_DC: SANITY CHECK FAILED: something is wrong\n\n\n")
+            # else:
+            #     logging.info("_EVM: CALLER: legit termination because of RETURN")
 
             return r_return
 
@@ -1446,11 +1503,6 @@ class CombinedSymbolicResult(object):
         self.results = [result] + self.results
         self._reset()
 
-    def merge_prepend(self, result):
-        # self.calls += 1
-        self.results = [result] + self.results
-        self._reset()
-
     def merge_results(self, storage=dict(), initial_balance=None):
         # merge should be able to concatanate head_callee_tail into one SR that represents the whole exec results of the whole call
 
@@ -1502,6 +1554,11 @@ class CombinedSymbolicResult(object):
         # ret_result.storage_info = self.results[-1].storage_info
 
         return ret_result
+
+    def merge_prepend(self, result):
+        # self.calls += 1
+        self.results = [result] + self.results
+        self._reset()
 
     @property
     def idx_dict(self):
