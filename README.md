@@ -65,3 +65,12 @@ Finally you can check the results using a terminal in teether-localhost with
 ```bash
     geth --exec 'loadScript("showBalance.js");getBalanceFrom("0x400000000000000000000000000000000000000b", 16)' attach http://127.0.0.1:8545
 ```
+
+If on the otherhand you want to run it using the JSON project-exploit way;
+```bash
+    pyhon combined_call_exploit.py ../teether-test/eval/JSON/0_R.contract.code 0x3cc7c038f7eea1b70014b788b821d675b13b8760 +1
+```
+and then
+```bash
+    python replay_exploit.py ../teether-test/eval/JSON/0_R.contract.code.project.json ../teether-test/eval/JSON/0_R.contract.code.exploit.json 0x3cc7c038f7eea1b70014b788b821d675b13b8760 +1
+```
