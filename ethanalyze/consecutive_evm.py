@@ -268,7 +268,6 @@ class SymbolicEVMState(AbstractEVMState):
         # self.shared_data = None
         self.input_value = None
         self.return_value = None
-        # self.xid = None
 
     def copy(self, new_xid):
         # Make a superficial copy of this state.
@@ -287,7 +286,7 @@ class SymbolicEVMState(AbstractEVMState):
 
 
 class LazySubstituteState(object):
-    def __init__(self, state, substitutions, critical_addr, critical_op):
+    def __init__(self, state, substitutions):
         self._state = state
         self._substitutions = list(substitutions)
         self.memory = LazySubstituteMemory(self._state.memory, substitutions)
@@ -296,10 +295,6 @@ class LazySubstituteState(object):
         self.pc = self._state.pc
         self.trace = self._state.trace
         self.balance = z3.substitute(state.balance, substitutions)
-        self.critical_address = z3.substitute(critical_addr, substitutions)
-        self.critical_op = critical_op
-        # if (state)
-        # self.critical_address = z3.substitute(state.critical_address, substitutions)
 
 
 class LazySubstituteMemory(object):
@@ -618,201 +613,135 @@ def addr(expr):
 #R:
 def symbolic_read(from_mem, evm_flag, constraints, source, destination, symb_ptr, symb_size, name):
     if concrete(symb_ptr) and concrete(symb_size):
-        # if (symb_size == 0):  # just a fallback function
-        #     logging.info("@@@@@_EVM: %s: size is ZERO? symb_ptr is %s symb_size is %s and source is %s\n" % (name, symb_ptr, symb_size, source))
-        #     destination = 0 if (from_mem) else destination #unaltered destination -> if memory then can't return0!
-        # elif(concrete(source)):
-        #     if(source == 0):
-        #         logging.info("@@@@@_EVM: %s: Source is ZERO? symb_ptr is %s symb_size is %s and source is %s\n" % (name, symb_ptr, symb_size, source))
-        # else:
-        logging.info("%s: %s: concrete(symb_ptr) and concrete(symb_size)" % (evm_flag, name))
-        if (from_mem):
-            for i in xrange(symb_size):
-                destination = z3.Store(destination, i, z3.Select(source, symb_ptr+i))
-        else: #i.e write to memory = destination
-            for i in xrange(symb_size):
-                destination = z3.Store(destination, symb_ptr+i, z3.Select(source, i))
+        if (symb_size == 0):  # just a fallback function
+            logging.info("@@@@@_EVM: %s: size is ZERO? symb_ptr is %s symb_size is %s and source is %s\n" % (name, symb_ptr, symb_size, source))
+            destination = 0 if (from_mem) else destination #unaltered destination -> if memory then can't return0!
+        elif(concrete(source)):
+            if(source == 0):
+                logging.info("@@@@@_EVM: %s: Source is ZERO? symb_ptr is %s symb_size is %s and source is %s\n" % (name, symb_ptr, symb_size, source))
+        else:
+            logging.info("%s: %s: concrete(symb_ptr) and concrete(symb_size)" % (evm_flag, name))
+            # if (from_mem):
+            #     for i in xrange(symb_size):
+            #         destination[i] = source[symb_ptr+i]
+            # else: #i.e write to memory = destination
+            #     for i in xrange(symb_size):
+            #         destination[symb_ptr + i] = source[i]
+            if (from_mem):
+                for i in range(0,symb_size):
+                    destination = z3.Store(destination, i, z3.Select(source, symb_ptr+i))
+            else: #i.e write to memory = destination
+                for i in range(0,symb_size):
+                    destination = z3.Store(destination, symb_ptr+i, z3.Select(source, i))
     #both symbolic
-    # elif not concrete(symb_ptr) and not concrete(symb_size):
-    #     logging.info("+X+X+X+%s: %s: CANT SYMBOLIC WRITE -> not concrete(symb_ptr) and not concrete(symb_size) they're %s and %s\n" % (evm_flag, name,
-    #                                                                                                                                    symb_ptr, symb_size))
-    #     destination = None if (from_mem) else destination
-
-    elif not concrete(symb_size): # size symbloic
-        symb_size = z3.simplify(symb_size)
-        # logging.info(
-        #     "%s: %s: not concrete(symb_size) it's %s execute try_to_solve()" % (evm_flag, name, symb_size))
-        # J:COPYCALLDATA
-        # if concrete(size):
-        #     for i in xrange(size):
-        #         mem[mstart + i] = calldata[dstart + i]
-        # else:
-        MAX_COPY_SIZE = 256
-        logging.info(
-            "%s: %s: not concrete(symb_size) prep z3.If and propograte %d bytes" % (evm_flag, name, MAX_COPY_SIZE))
-
-        #from CALLDATACOPY
-        # constraints.append(z3.ULT(size, MAX_CALLDATA_SIZE))
-        #         for i in xrange(MAX_CALLDATA_SIZE):
-                    # if the symbolic size turns out to be smaller then the index of this element
-                    # then we leave the original memory that was there
-                    #else(size is bigger then this index) - then we subst with the inputdata
-        #             mem[mstart + i] = z3.If(size < i, mem[mstart + i], calldata[dstart + i])
-
-        # constraints.append(z3.ULT(symb_size, MAX_COPY_SIZE))
-        # if (not from_mem) and (symb_ptr == 0):  # it's INPUT_value_to_calleeCALLDATA -> has to be defined explicitly or else it wouldn't work?
-        #     for i in xrange(MAX_COPY_SIZE):
-        #         destination = z3.Store(destination, i, z3.Select(source, i))
-        # if (from_mem):
-        #     # elif (from_mem):
-        #     for i in xrange(MAX_COPY_SIZE):
-        #         # i.e. if symb_size is smaller then index; then leave value as it was; otherwise substitute with the source element
-        #         in_elem = z3.If(symb_size < i, z3.Select(destination, i), z3.Select(source, symb_ptr + i))
-        #         destination = z3.Store(destination, i, in_elem)
-        # else:  # i.e write to memory = destination
-        #     for i in xrange(MAX_COPY_SIZE):
-        #         in_elem = z3.If(symb_size < i, z3.Select(destination, symb_ptr + i), z3.Select(source, i))
-        #         destination = z3.Store(destination, symb_ptr + i, in_elem)
-
-        # z3.IF( if size turns out to be bigger then i, put this, else keep it as old)
-        constraints.append(z3.ULT(symb_size, MAX_COPY_SIZE))
-        # if (not from_mem) and (symb_ptr == 0): #it's INPUT_value_to_calleeCALLDATA -> has to be defined explicitly or else it wouldn't work?
-        #     for i in xrange(MAX_COPY_SIZE):
-        #         # this z3.If makes my payload split into two: CALL_TEST_2 data:"0xb954" and the related callee exploit: data:"0x0000adc8"
-        #         in_elem = z3.If(symb_size < i, z3.Select(destination, i), z3.Select(source, symb_ptr))
-        #         destination = z3.Store(destination, i, in_elem)
-        #         # old assignment
-        #         # destination = z3.Store(destination, i, z3.Select(source, i))
-        if (from_mem):
-        # elif (from_mem):
-            for i in range(MAX_COPY_SIZE):
-                #i.e. if symb_size is smaller then index; then leave value as it was; otherwise substitute with the source element
-                in_elem = z3.If(symb_size <= i, z3.Select(destination, i), z3.Select(source, symb_ptr + i))
-                destination = z3.Store(destination, i, in_elem)
-        else:  # i.e write to memory = destination
-            for i in range(MAX_COPY_SIZE):
-                in_elem = z3.If(symb_size <= i, z3.Select(destination, symb_ptr + i), z3.Select(source, i))
-                destination = z3.Store(destination, symb_ptr + i, in_elem)
-
-    elif not concrete(symb_ptr): #pointer symbloic
+    elif not concrete(symb_ptr) and not concrete(symb_size):
+        logging.info("+++++++%s: %s: CANT SYMBOLIC WRITE -> not concrete(symb_ptr) and not concrete(symb_size) they're %s and %s\n" % (evm_flag, name, symb_ptr, symb_size))
+        destination = None if (from_mem) else destination
+    #pointer symbloic
+    elif not concrete(symb_ptr):
         symb_ptr = z3.simplify(symb_ptr)
         logging.info(
-            "%s: %s: not concrete(symb_ptr) just use it as symbolic in z3.Store/Select" % (evm_flag, name))
+            "%s: %s: not concrete(symb_ptr) it's %s" % (evm_flag, name, symb_ptr))
         if (from_mem):
-            for i in xrange(symb_size):
+            for i in range(0,symb_size):
                 destination = z3.Store(destination, i, z3.Select(source, symb_ptr+i))
         else: #i.e write to memory = destination
-            for i in xrange(symb_size):
+            for i in range(0,symb_size):
                 destination = z3.Store(destination, symb_ptr+i, z3.Select(source, i))
-
-        # # for i in xrange(MAX_CALLDATA_SIZE):
-        # #     mem[mstart + i] = z3.If(symb_size < i, mem[mstart + i], calldata[dstart + i])
-        # #
-        # # debbug #debbug #debbug
-        # # destination = None if (from_mem) else destination
-        # # return destination
-        # #w/o solution;
-        # # if (from_mem):
-        # #     for i in xrange(64):
-        # #                 destination = z3.Store(destination, i, z3.Select(source, symb_ptr + i))
-        # # else:  # i.e write to memory = destination
-        # #     for i in xrange(64):
-        # #         destination = z3.Store(destination, symb_ptr + i, z3.Select(source, i))
-        # # logging.info(
-        # #     "%s: %s: symbolic symb_size is %s so we try to simply write into 64 elements" % (evm_flag, name, symb_size))
-        # solution = try_to_solve(constraints, symb_size)
-        # # if (solution == None or solution == 0) and ('CALLDATASIZE' in str(symb_size)):
-        # if (solution == None or solution == 0):
-        #     if (from_mem):
-        #         for i in xrange(64):
-        #             destination = z3.Store(destination, i, z3.Select(source, symb_ptr + i))
-        #     else:  # i.e write to memory = destination
-        #         for i in xrange(64):
-        #             destination = z3.Store(destination, symb_ptr + i, z3.Select(source, i))
-        #     logging.info(
-        #         "%s: %s: try_to_solve result is %s but the symb_size is %s so we try 64" % (evm_flag, name, solution, symb_size))
-        # elif(solution == 0): #and not CALLDATASIZE
-        #     logging.info(
-        #         "%s: %s: try_to_solve result is %s, if this is to_mem ignore; otherwise ret 0" % (
-        #         evm_flag, name, solution))
-        #     destination = 0 if (from_mem) else destination
-        # elif (solution != None):
-        #     symb_size = solution.as_long()
-        #     if (from_mem):
-        #         for i in xrange(symb_size):
-        #             destination = z3.Store(destination, i, z3.Select(source, symb_ptr + i))
-        #     else:  # i.e write to memory = destination
-        #         for i in xrange(symb_size):
-        #             destination = z3.Store(destination, symb_ptr + i, z3.Select(source, i))
-        #     logging.info(
-        #         "%s: %s: try_to_solve solution is %s and we saved to destination" % (evm_flag, name, solution))
-        # else:
-        #     logging.info(
-        #             "+N+++%s: %s: CAN'T solve constrains - solution is %s symb_size is %s" % (evm_flag, name ,solution, symb_size) )
-        #     # destination = None if (from_mem) else destination
-        #     logging.info(
-        #         "%s: %s: try_to_solve result is %s but the symb_size is %s so we try 64" % (evm_flag, name, solution, symb_size))
-        #     if (from_mem):
-        #         for i in xrange(symb_size):
-        #             destination = z3.Store(destination, i, z3.Select(source, symb_ptr + i))
-        #     else:  # i.e write to memory = destination
-        #         for i in xrange(symb_size):
-        #             destination = z3.Store(destination, symb_ptr + i, z3.Select(source, i))
+    # size symbloic
+    elif not concrete(symb_size):
+        symb_size = z3.simplify(symb_size)
+        logging.info(
+            "%s: %s: not concrete(symb_size) it's %s execute try_to_solve()" % (evm_flag, name, symb_size))
+        # debbug #debbug #debbug
+        # destination = None if (from_mem) else destination
+        # return destination
+        #w/o solution;
+        # if (from_mem):
+        #     for i in range(0,64):
+        #                 destination = z3.Store(destination, i, z3.Select(source, symb_ptr + i))
+        # else:  # i.e write to memory = destination
+        #     for i in range(0,64):
+        #         destination = z3.Store(destination, symb_ptr + i, z3.Select(source, i))
+        # logging.info(
+        #     "%s: %s: symbolic symb_size is %s so we try to simply write into 64 elements" % (evm_flag, name, symb_size))
+        solution = try_to_solve(constraints, symb_size)
+        if (solution == None or solution == 0) and ('CALLDATASIZE' in str(symb_size)):
+            if (from_mem):
+                for i in range(0,64):
+                    destination = z3.Store(destination, i, z3.Select(source, symb_ptr + i))
+            else:  # i.e write to memory = destination
+                for i in range(0,64):
+                    destination = z3.Store(destination, symb_ptr + i, z3.Select(source, i))
+            logging.info(
+                "%s: %s: try_to_solve result is %s but the symb_size is %s so we try 64" % (evm_flag, name, solution, symb_size))
+        elif(solution == 0): #and not CALLDATASIZE
+            logging.info(
+                "%s: %s: try_to_solve result is %s, if this is to_mem ignore; otherwise ret 0" % (
+                evm_flag, name, solution))
+            destination = 0 if (from_mem) else destination
+        elif (solution != None):
+            symb_size = solution.as_long()
+            if (from_mem):
+                for i in range(0,symb_size):
+                    destination = z3.Store(destination, i, z3.Select(source, symb_ptr + i))
+            else:  # i.e write to memory = destination
+                for i in range(0,symb_size):
+                    destination = z3.Store(destination, symb_ptr + i, z3.Select(source, i))
+            logging.info(
+                "%s: %s: try_to_solve solution is %s and we saved to destination" % (evm_flag, name, solution))
+        else:
+            logging.info(
+                    "+++++%s: %s: CAN'T solve constrains - solution is %s symb_size is %s" % (evm_flag, name ,solution, symb_size) )
+            destination = None if (from_mem) else destination
     else:
         logging.info(
             "!@#!@#!@#!@#%s: %s: SANITY CHECK FAILED: something is wrong\n\n\n" % (evm_flag ,name))
     return destination
 
-# def try_to_solve(constrains, term):
-#     term = z3.simplify(term)
-#     s = z3.SolverFor("QF_ABV")
-#     constraints_of_term = []
-#     if (len(constrains) == 0):
-#         logging.info(
-#             "SOLV: can't try_to_solve because there are no constraints" % term)
-#         return None
-#     for i in constrains:
-#         if (str(term) in str(i)):
-#             constraints_of_term.append(i)
-#     if (len(constraints_of_term) == 0):
-#         logging.info(
-#             "SOLV: can't try_to_solve because no constraint has term in it, i.e. constraints_of_term is empty" % term)
-#         return None
-#     s.add(constraints_of_term)
-#     if s.check() != z3.sat:
-#         # raise IntractablePath("CHECK", "MODEL")
-#         logging.info(
-#             "@@@@#$%#&^*(^*^%@#$@@@_SOLV: can't resolve the symbolic target" % term)
-#         return None
-#     else:  # check is validand there are no sha3 constrains
-#         m = s.model()
-#         if (m[term] != None):
-#             return m[term]
-#         else:
-#             logging.info(
-#                 "#!@#!@!@#_SOLV: Solved constrains but it's a TypeNone target = %s" % term)
+def try_to_solve(constrains, term):
+    term = z3.simplify(term)
+    s = z3.SolverFor("QF_ABV")
+    constraints_of_term = []
+    if (len(constrains) == 0):
+        logging.info(
+            "_EVM: can't try_to_solve because there are no constraints" % term)
+        return None
+    for i in constrains:
+        if (str(term) in str(i)):
+            constraints_of_term.append(i)
+    if (len(constraints_of_term) == 0):
+        logging.info(
+            "_EVM: can't try_to_solve because no constraint has term in it, i.e. constraints_of_term is empty" % term)
+        return None
+    s.add(constraints_of_term)
+    if s.check() != z3.sat:
+        # raise IntractablePath("CHECK", "MODEL")
+        logging.info(
+            "@@@@#$%#&^*(^*^%@#$@@@_EVM: can't resolve the symbolic target" % term)
+        return None
+    else:  # check is validand there are no sha3 constrains
+        m = s.model()
+        if (m[term] != None):
+            return m[term]
+        else:
+            logging.info(
+                "#!@#!@!@#_EVM: Solved constrains but it's a TypeNone target = %s" % term)
 
 
 # EVM func for symbolic execution
-def run_symbolic(program, path, code=None, state=None, ctx=None, inclusive=False, term_on_interCall=False, storage_index=None):
+def run_symbolic(program, path, code=None, state=None, ctx=None, inclusive=False, term_on_DC=False, storage_index=None):
 
 
     # MAX_CALLDATA_SIZE = 512
     MAX_CALLDATA_SIZE = 256
     if "xid" not in run_symbolic.__dict__:
         run_symbolic.xid = 0
-        xid = run_symbolic.xid
     elif (state): #meaning there's a state import; we can reuse the xid
-        # pass #dont increment xid; it's still the same call
-        name = str(state.balance)
-        xid = int(name[name.rfind('_') + 1:])
+        pass #dont increment xid; it's still the same call
     else:
-        # import random
-        # run_symbolic.xid = int(random.random() * 1000)
-        # hash_object = hashlib.md5(b'Hello World')
-        # hash_object.hexdigest()
         run_symbolic.xid += 1
-        xid = run_symbolic.xid
+    xid = run_symbolic.xid
     #init stuff for SymbolicResult class later on
     state = state or SymbolicEVMState(xid=xid, code=code)
     storage = state.storage
@@ -847,98 +776,61 @@ def run_symbolic(program, path, code=None, state=None, ctx=None, inclusive=False
         calldatasize = z3.BitVec('calleeCALLDATASIZE_%d' % xid, 256)
 
         if (state.input_value != None and state.call_args != None): #sanity check - there's an input value
-            s3 = state.call_args[3]
+            # s3 = state.call_args[3]
             s4 = state.call_args[4]
-
-            #simply copy input_value?
-            # calldata = state.return_value
-            #def symbolic_read(from_mem, evm_flag, constraints, source, destination, symb_ptr, symb_size, name):
-            # calldata = symbolic_read(False, evm_flag, constraints, state.input_value, calldata, 0, s4,
-            #                                     "INPUT_value_into_calleeCALLDATA")
-            #try to actaully assign input_value as calleeeCALLDATA?
-            calldata = state.input_value
-            #BREAKS CONSTRAINTS
-            # constraints.append(calldatasize == s4)) <- this breaks execution? but why?
-
-            # old method
-            # if concrete(s4):
-            #     calldata = state.return_value
-            #     logging.info(
-            #         "%s: state.RETURN_value ptr and size are concrete; direct copy from RETURN_value to mem" % evm_flag)
-            # else:
-            #     logging.info(
-            #         "%s: state.RETURN_value ptr and size are NOT concrete" % evm_flag)
-            #     state.memory.memory = symbolic_read(False, evm_flag, constraints, state.return_value, state.memory.memory, s5, s6,
-            #                                         "RETURN_value_into_state.memory.memory")
-
-
             #old try
             # calldata = state.input_value
+            #R: method
+            if concrete(state.input_value):
+                if (state.input_value == 0):
+                    pass #input_value is a zero transaction - no outcome on calldata so we leave calldata symbolic inited above
+                else:
+                    logging.info("%s: input_value is concrete but not zero? WTF?\n\n\n")
+            elif concrete(s4):
+                logging.info("%s: state.INPUT_value size is concrete; direct copy from value to calleeCALLDATA" % evm_flag)
+                # for i in range(s4):
+                # calldata[0:s4] = state.input_value[0:s4]
+                for i in range(0, s4):
+                    calldata = z3.Store(calldata, i, z3.Select(state.input_value, i))
 
-            # R: method
-        #     if concrete(state.input_value):
-        #         if (state.input_value == 0):
-        #             pass #input_value is a zero transaction - no outcome on calldata so we leave calldata symbolic inited above
-        #         else:
-        #             logging.info("%s: input_value is concrete but not zero? WTF?\n\n\n")
-        #     elif concrete(s4):
-        #         logging.info("%s: state.INPUT_value size is concrete; direct copy from value to calleeCALLDATA" % evm_flag)
-        #         # for i in range(s4):
-        #         # calldata[0:s4] = state.input_value[0:s4]
-        #         for i in xrange( s4):
-        #             calldata = z3.Store(calldata, i, z3.Select(state.input_value, i))
-        #
-        #
-        #     else: #input_value is symbolic and s4 is symbolic
-        #         logging.info("%s: state.INPUT_value size is NOT concrete" % evm_flag)
-        #         # calldata = symbolic_read(False, evm_flag, constraints, state.input_value, calldata,0, s4, "INPUT_value_into_calleeCALLDATA")
-        #         #startCOPY
-        #         name = "input_value_into_calleeCALLDATA"
-        #         s4 = z3.simplify(s4)
-        #         # solution = try_to_solve(constraints, s4)
-        #         solution = None
-        #         # if (solution == None) and ('CALLDATASIZE' in str(s4)):
-        #         # if (solution == None) and ('CALLDATASIZE' in str(s4)):
-        #         if(True):
-        #             for i in xrange(256):
-        #                 calldata = z3.Store(calldata, 0 + i, z3.Select(state.input_value, i))
-        #
-        #             logging.info("%s: %s: try_to_solve result is %s but the s4 is %s so we try an arbitrary 64" % (evm_flag,name, solution, s4))
-        #         elif (solution == 0):
-        #             logging.info("%s: try_to_solve result is %s, so do nothing to calldata" % (evm_flag, solution))
-        #         elif (solution != None): #actually found a solution!
-        #             s4 = solution.as_long()
-        #             for i in xrange( s4):
-        #                 calldata = z3.Store(calldata, 0 + i, z3.Select(state.input_value, i))
-        #             logging.info(
-        #                 "%s: %s: try_to_solve solution is %s and we saved to destination" % (evm_flag, name, solution))
-        #         else:
-        #             logging.info(
-        #                 "+E+++%s: %s: CAN'T solve constrains - solution is %s symb_size is %s" % (evm_flag, name, solution, s4))
-        #             # logging.info("%s: %s: try_to_solve result is %s but the s4 is %s so we try an arbitrary 64" % (evm_flag, name, solution, s4))
-        #             # for i inxrange(4, 64):
-        #             #     calldata = z3.Store(calldata, 0 + i, z3.Select(state.input_value, i))
-        #         #endCOPY
-        # else:
-        #     logging.info("%s: start exec on callee but NO state.INPUT_value!" % evm_flag)
+
+            else: #input_value is symbolic and s4 is symbolic
+                logging.info("%s: state.INPUT_value size is NOT concrete" % evm_flag)
+                # calldata = symbolic_read(False, evm_flag, constraints, state.input_value, calldata,0, s4, "INPUT_value_into_calleeCALLDATA")
+                #startCOPY
+                name = "input_value_into_calleeCALLDATA"
+                s4 = z3.simplify(s4)
+                solution = try_to_solve(constraints, s4)
+                if (solution == None) and ('CALLDATASIZE' in str(s4)):
+                # if(True):
+                    for i in range(0, 64):
+                        calldata = z3.Store(calldata, 0 + i, z3.Select(state.input_value, i))
+
+                    logging.info("%s: %s: try_to_solve result is %s but the s4 is %s so we try an arbitrary 64" % (evm_flag,name, solution, s4))
+                elif (solution == 0):
+                    logging.info("%s: try_to_solve result is %s, so do nothing to calldata" % (evm_flag, solution))
+                elif (solution != None): #actually found a solution!
+                    s4 = solution.as_long()
+                    for i in range(0, s4):
+                        calldata = z3.Store(calldata, 0 + i, z3.Select(state.input_value, i))
+                    logging.info(
+                        "%s: %s: try_to_solve solution is %s and we saved to destination" % (evm_flag, name, solution))
+                else:
+                    logging.info(
+                        "+++++%s: %s: CAN'T solve constrains - solution is %s symb_size is %s" % (evm_flag, name, solution, s4))
+                #endCOPY
+        else:
+            logging.info("%s: start exec on callee but NO state.INPUT_value!" % evm_flag)
 
     # TAIL # TAIL # TAIL # TAIL # TAIL # TAIL # TAIL # TAIL # TAIL # TAIL # TAIL # TAIL # TAIL
     else: #if(state.callee_addr != 1):
         evm_flag = "TAIL"
         calldata = z3.Array('CALLDATA_%d' % xid, z3.BitVecSort(256), z3.BitVecSort(8))
         calldatasize = z3.BitVec('CALLDATASIZE_%d' % xid, 256)
-        if(state.call_args != None):
+
+        if (state.return_value != None and state.call_args != None): #i.e. tehres a return and WE ACTUALLY ASKED FOR IT! -> size >0
             s5 = state.call_args[5]
             s6 = state.call_args[6]
-        if (state.return_value == None):  # ret_val is none but we're actually expecting one becasue there's pointer
-            logging.info("%s: tail but NO state.RETURN_value present - is this a return-less path?" % evm_flag)
-            # logging.info("\n%s: state.RETURN_value is None but we're expecting a return; this is an invalid path\n" % evm_flag)
-            # logging.info("\n%s: state.RETURN_value is None but we're expecting a return; this is an invalid path\n" % evm_flag)
-            # logging.info("\n%s: state.RETURN_value is None but we're expecting a return; this is an invalid path\n" % evm_flag)
-            # logging.info("\n%s: state.RETURN_value is None but we're expecting a return; this is an invalid path\n" % evm_flag)
-            # logging.info("\n%s: state.RETURN_value is None but we're expecting a return; this is an invalid path\n" % evm_flag)
-            # return
-        else: #if(state.return_value != None): #i.e. tehres a return and WE ACTUALLY ASKED FOR IT! -> size >
 
             #try direct write(self, start, size, val):
             # state.memory.write(s5, s6, state.return_value)
@@ -952,8 +844,8 @@ def run_symbolic(program, path, code=None, state=None, ctx=None, inclusive=False
                     "%s: state.RETURN_value ptr and size are NOT concrete" % evm_flag)
                 state.memory.memory = symbolic_read(False, evm_flag, constraints, state.return_value, state.memory.memory, s5, s6, "RETURN_value_into_state.memory.memory")
 
-            # else:
-            #     logging.info("%s: tail but NO state.RETURN_value present - is this a return-less path?" % evm_flag)
+        else:
+            logging.info("%s: tail but NO state.RETURN_value present - is this a return-less path?" % evm_flag)
 
     while state.pc in program:
         state.trace.append(state.pc)
@@ -969,13 +861,6 @@ def run_symbolic(program, path, code=None, state=None, ctx=None, inclusive=False
         if (not path) and inclusive:
             logging.info("%s: premature termination on %s because of 1: if (not path) and inclusive): " % (evm_flag, op))
             state.success = True
-            # used in replay_exploit
-            if (op in {'CALL', 'CALLCODE', 'DELEGATECALL', 'SUICIDE'}):
-                state.critical_addr = stk[-1] if op == 'SUICIDE' else stk[-2]
-                state.critical_op = op
-                if (op == 'CALL'):
-                    state.critical_amount = stk[-3]
-
             return SymbolicResult(xid, state, constraints, sha_constraints, initial_path, path)
 
         #2) premature return: if PC points to top op in path, then remove top op from path
@@ -985,13 +870,6 @@ def run_symbolic(program, path, code=None, state=None, ctx=None, inclusive=False
             if (not path) and not inclusive:
                 logging.info("%s: premature termination on %s because of 2: (if after PC update path's empty and NOT inclusive" % (evm_flag, op))
                 state.success = True
-                #used in replay_exploit
-                if(op in {'CALL', 'CALLCODE', 'DELEGATECALL', 'SUICIDE'}):
-                    state.critical_addr = stk[-1] if op == 'SUICIDE' else stk[-2]
-                    state.critical_op = op
-                    if(op == 'CALL'):
-                        state.critical_amount = stk[-3]
-
                 return SymbolicResult(xid, state, constraints, sha_constraints, initial_path, path)
 
         # Valid operations
@@ -1195,14 +1073,7 @@ def run_symbolic(program, path, code=None, state=None, ctx=None, inclusive=False
             elif op == 'ORIGIN':
                 stk.append(ctx_or_symbolic('ORIGIN', ctx, xid))
             elif op == 'CALLER':
-                #whenever CALLCODE is executed msg.sender is overwritten by the adddress of the contract that is executing the call - we save it to state and
-                # pass it further down the execution line
-                #when CALLER is called later - we reuse the address of the contract that executed the CALLCODE
-                try:
-                    if(state.old_caller != None):
-                        stk.append(state.old_caller)
-                except AttributeError:
-                    stk.append(ctx_or_symbolic('CALLER', ctx, xid))
+                stk.append(ctx_or_symbolic('CALLER', ctx, xid))
             elif op == 'CALLVALUE':
                 stk.append(ctx_or_symbolic('CALLVALUE', ctx, xid))
             elif op == 'CALLDATALOAD':
@@ -1214,12 +1085,10 @@ def run_symbolic(program, path, code=None, state=None, ctx=None, inclusive=False
             elif op == 'CALLDATASIZE':
                 stk.append(calldatasize)
             elif op == 'CALLDATACOPY':
-                #memory[mstart:mstart+length] = msg.data[dstart:dstart+length]
                 mstart, dstart, size = stk.pop(), stk.pop(), stk.pop()
                 constraints.append(z3.UGE(calldatasize, dstart + size))
                 if not concrete(dstart):
                     constraints.append(z3.ULT(dstart, MAX_CALLDATA_SIZE))
-
                 if concrete(size):
                     for i in xrange(size):
                         mem[mstart + i] = calldata[dstart + i]
@@ -1323,9 +1192,6 @@ def run_symbolic(program, path, code=None, state=None, ctx=None, inclusive=False
                     stk.append(v)
             elif op == 'SSTORE':
                 s0, s1 = stk.pop(), stk.pop()
-                #debugging
-                # if(s0 == 1):
-                #     pass
                 storage[s0] = s1
                 if (storage_index == s0): #if SSTORE laters the requested index; set index to flagvalue that would be checked on return
                     storage_index = float('inf')
@@ -1371,28 +1237,6 @@ def run_symbolic(program, path, code=None, state=None, ctx=None, inclusive=False
                         raise SymbolicError('Symbolic jump target')
                     else:
                         raise IntractablePath(state.trace, path)
-                        #roman fix for when s1 can be simplified
-                        # try:
-                        #     term_as_long = z3.simplify(s1).as_long()
-                        # except AttributeError:
-                        #     raise IntractablePath(state.trace, path)
-                        #
-                        # if (concrete(term_as_long)):
-                        #     if term_as_long:
-                        #         if not concrete(s0):
-                        #             raise SymbolicError('Symbolic jump target')
-                        #         if s0 != next_target and state.pc + 1 == next_target:
-                        #             raise IntractablePath(state.trace, path)
-                        #         state.pc = s0
-                        #         if state.pc >= len(state.code) or not program[state.pc].name == 'JUMPDEST':
-                        #             raise vm_exception('BAD JUMPDEST')
-                        #         continue
-                        #     else:
-                        #         if concrete(s0):
-                        #             if state.pc + 1 != next_target and s0 == next_target:
-                        #                 raise IntractablePath(state.trace, path)
-                        # else:
-                        #     raise IntractablePath(state.trace, path)
 
             elif op == 'PC':
                 stk.append(state.pc)
@@ -1439,121 +1283,61 @@ def run_symbolic(program, path, code=None, state=None, ctx=None, inclusive=False
                 if op == 'CALL':
                     constraints.append(z3.UGE(state.balance, s2))
                     state.balance -= s2
-                    logging.info("%s: encountered a %s" % (evm_flag, op))
-                    #taken from OG teEther - mute internal 'CALL'
-                    if not concrete(s6):
-                        raise SymbolicError("Symbolic return-buffer length in %s", op)
-
-                    ostart = s5 if concrete(s5) else z3.simplify(s5)
-                    olen = s6 if concrete(s6) else z3.simplify(s6)
-
-                    if concrete(s1) and s1 == 4:
-                        logging.info("Calling precompiled identity contract")
-                        istart = s3 if concrete(s3) else z3.simplify(s3)
-                        for i in xrange(olen):
-                            mem[ostart + i] = mem[istart + i]
-                        else:
-                            raise SymbolicError("Precompiled contract %d not implemented", s1)
-                    else:
-                        for i in xrange(olen):
-                            mem[ostart + i] = z3.BitVec('EXT_%d_%d_%d' % (instruction_count, i, xid), 8)
-
-                    stk.append(z3.BitVec('CALLRESULT_%d_%d' % (instruction_count, xid), 256))
-                    # logging.info("!@#!@#!@#%s: encountered a %s - is this a mistake?\n" % (evm_flag, op))
-                    # logging.info("!@#!@#!@#%s: encountered a %s - is this a mistake?\n" % (evm_flag, op))
-
-                if op == 'CALLCODE': #whenever callcode is called; we save current CALLER into state and pass it down the execution line
-                    state.old_caller = ctx_or_symbolic('ADDRESS', ctx, xid)
-                    # state.call_args[8] = ctx_or_symbolic('ADDRESS', ctx, xid)
             elif op == 'DELEGATECALL':
                 s0, s1, s3, s4, s5, s6 = stk.pop(), stk.pop(), stk.pop(), stk.pop(), stk.pop(), stk.pop()
                 s2 = None #to keep the same template for all calls
                 #first part of CALLER exec should terminate on DC
-                # if(term_on_DC):
-                #     logging.info("%s: premature halt on DELEGATECALL due to term_on_DC flag" % evm_flag)
-                #     r_return = SymbolicResult(xid, state, constraints, sha_constraints,initial_path, path)
-                #
-                #     r_return.state.callee_addr = s1
-                #     r_return.state.call_args = (s0, s1, s2, s3, s4, s5, s6)
-                #
-                #     r_return.state.input_value = z3.K(z3.BitVecSort(256), z3.BitVecVal(0, 8))
-                #     r_return.state.input_value = symbolic_read(True, evm_flag, constraints, state.memory.memory, r_return.state.input_value, s3, s4,
-                #                                                "memory_to_INPUT_value")
-                #     #try direct mem read -> def read(self, start, size):
-                #     # if concrete(s3) and concrete(s4):
-                #     #     for i in range(s4):
-                #     #         r_return.state.input_value[i] = mem[s3 +i]
-                #     # if concrete(s3) and concrete(s4):
-                #     #     state.input_value = mem[s3:s3+s4]
-                #     #     logging.info(
-                #     #         "%s: state.INPUT_value ptr and size are concrete; direct copy from mem to state.INPUT_value" % evm_flag)
-                #     # else:
-                #     #     logging.info(
-                #     #         "%s: state.INPUT_value ptr and size NOT are concrete - input is NONE" % evm_flag)
-                #     #     # r_return.state.input_value = None
-                #     #     # r_return.state.input_value = z3.K(z3.BitVecSort(256), z3.BitVecVal(0, 8))
-                #     #     # r_return.state.input_value = symbolic_read(True, evm_flag, constraints, state.memory.memory, r_return.state.input_value, s3, s4, "memory_to_INPUT_value" )
-                #     return r_return
-                # else:
-                #     #continue exec, leave succsesful 1 on stack as return value
-                #     logging.info("!@#!@#!@#%s: encountered DELEGATECALL w/o a DC_flag - is this a mistake?" % evm_flag)
-                #     stk.append(1)
+                if(term_on_DC):
+                    r_return = SymbolicResult(xid, state, constraints, sha_constraints,initial_path, path)
+
+                    r_return.state.callee_addr = s1
+                    r_return.state.call_args = (s0, s1, s2, s3, s4, s5, s6)
+
+                    r_return.state.input_value = z3.K(z3.BitVecSort(256), z3.BitVecVal(0, 8))
+                    r_return.state.input_value = symbolic_read(True, evm_flag, constraints, state.memory.memory, r_return.state.input_value, s3, s4,
+                                                               "memory_to_INPUT_value")
+                    #try direct mem read -> def read(self, start, size):
+                    # if concrete(s3) and concrete(s4):
+                    #     for i in range(s4):
+                    #         r_return.state.input_value[i] = mem[s3 +i]
+                    # if concrete(s3) and concrete(s4):
+                    #     state.input_value = mem[s3:s3+s4]
+                    #     logging.info(
+                    #         "%s: state.INPUT_value ptr and size are concrete; direct copy from mem to state.INPUT_value" % evm_flag)
+                    # else:
+                    #     logging.info(
+                    #         "%s: state.INPUT_value ptr and size NOT are concrete - input is NONE" % evm_flag)
+                    #     # r_return.state.input_value = None
+                    #     # r_return.state.input_value = z3.K(z3.BitVecSort(256), z3.BitVecVal(0, 8))
+                    #     # r_return.state.input_value = symbolic_read(True, evm_flag, constraints, state.memory.memory, r_return.state.input_value, s3, s4, "memory_to_INPUT_value" )
+
+                    return r_return
+                else:
+                    #continue exec, leave succsesful 1 on stack as return value
+                    logging.info("!@#!@#!@#%s: encountered DELEGATECALL w/o a DC_flag - is this a mistake?" % evm_flag)
+                    stk.append(1)
             elif op == 'STATICCALL':
                 s0, s1, s3, s4, s5, s6 = stk.pop(), stk.pop(), stk.pop(), stk.pop(), stk.pop(), stk.pop()
                 s2 = 0
-                logging.info("!@#!@#!@#%s: encountered a %s - is this a mistake?\n" % (evm_flag, op))
-                logging.info("!@#!@#!@#%s: encountered a %s - is this a mistake?\n" % (evm_flag, op))
-                logging.info("!@#!@#!@#%s: encountered a %s - is this a mistake?\n" % (evm_flag, op))
 
-            if (term_on_interCall):
-                logging.info("%s: premature halt on %s due to term_on_interCall flag" % (evm_flag, op))
-                r_return = SymbolicResult(xid, state, constraints, sha_constraints, initial_path, path)
+            if not concrete(s6):
+                raise SymbolicError("Symbolic return-buffer length in %s", op)
 
-                r_return.state.callee_addr = s1
-                r_return.state.call_args = (s0, s1, s2, s3, s4, s5, s6, op)
-                # r_return.state.critical_op = op
+            ostart = s5 if concrete(s5) else z3.simplify(s5)
+            olen = s6 if concrete(s6) else z3.simplify(s6)
 
-                # force those memory addr to be smaller then 256 to avoid letting the solver choose a value that is too expensive in GAS
-                if (not concrete(s3)):
-                    constraints.append(z3.ULE(s3, 256))
-                #
-                if (not concrete(s5)):
-                    constraints.append(z3.ULE(s5, 256))
-
-                # if (not concrete(s3)):
-                #     constraints.append( z3.Extract(255,248,s3) == z3.Select(mem.memory, 64))
-                #try to find an empty (only zeros) memory slice
-                # I get on CALL_5
-
-                r_return.state.input_value = z3.K(z3.BitVecSort(256), z3.BitVecVal(0, 8))
-                r_return.state.input_value = symbolic_read(True, evm_flag, constraints, state.memory.memory, r_return.state.input_value, s3, s4,
-                                                           "memory_to_INPUT_value")
-                return r_return
-
-
+            if concrete(s1) and s1 == 4:
+                logging.info("Calling precompiled identity contract")
+                istart = s3 if concrete(s3) else z3.simplify(s3)
+                for i in xrange(olen):
+                    mem[ostart + i] = mem[istart + i]
+                else:
+                    raise SymbolicError("Precompiled contract %d not implemented", s1)
             else:
-                # continue exec, leave succsesful 1 on stack as return value
-                logging.info("!@#!@#!@#%s: encountered %s w/o a term_on_interCall flag - is this a mistake?" % (evm_flag, op))
-                stk.append(1)
+                for i in xrange(olen):
+                    mem[ostart + i] = z3.BitVec('EXT_%d_%d_%d' % (instruction_count, i, xid), 8)
 
-            # if not concrete(s6):
-            #     raise SymbolicError("Symbolic return-buffer length in %s", op)
-            #
-            # ostart = s5 if concrete(s5) else z3.simplify(s5)
-            # olen = s6 if concrete(s6) else z3.simplify(s6)
-            #
-            # if concrete(s1) and s1 == 4:
-            #     logging.info("Calling precompiled identity contract")
-            #     istart = s3 if concrete(s3) else z3.simplify(s3)
-            #     for i in xrange(olen):
-            #         mem[ostart + i] = mem[istart + i]
-            #     else:
-            #         raise SymbolicError("Precompiled contract %d not implemented", s1)
-            # else:
-            #     for i in xrange(olen):
-            #         mem[ostart + i] = z3.BitVec('EXT_%d_%d_%d' % (instruction_count, i, xid), 8)
-            # stk.append(z3.BitVec('CALLRESULT_%d_%d'%(instruction_count, xid), 256))
-
+            stk.append(z3.BitVec('CALLRESULT_%d_%d'%(instruction_count, xid), 256))
         elif op == 'RETURN':
             s0, s1 = stk.pop(), stk.pop()
             # 	return memory[offset:offset+length]
@@ -1688,26 +1472,22 @@ class CombinedSymbolicResult(object):
         self._sha_constraints = None
         self._states = None
 
-    def _combine(self, storage=dict(), initial_balance=None, critical_addr=None, critical_op=None):
+    def _combine(self, storage=dict(), initial_balance=None):
         # _combine does the main work in alpha-renaming etc
-        # def; z3.Store(destination, dst_index, z3.Select(source, src_index))
+
         # UPDATE storage
         extra_subst = []
         storage_base = z3.K(z3.BitVecSort(256), z3.BitVecVal(0, 256))         #init a Z3 object
-
-        for k, v in storage.iteritems(): #prep storage_base with the initial storage
+        #populate the object with the given storage
+        for k, v in storage.iteritems():
+            #J:
             storage_base = z3.Store(storage_base, k, v) #z3 array representation - store v on index k at storage_base
             #logging.info("evm.CombinedSymbolicResult.combine(); " + z3.Select(storage_base,k) )
-
-        for result in self.results: #populate each result with the initial storage preped from above - constraints are deduced below!
+        #go over the given results starting with first in chronological order
+        for result in self.results:
+            extra_subst.append((result.state.storage.base, storage_base)) #
             #Substitute every occurrence of storage in the expression with extra_subst. = ALPHA RENAMING
-            #substitute(inExpression, (from, to))
-            #substitute(x + 1, (x, y + 1)) --> Expr = [y + 1 + 1]
-            #substitute(result.state.storage.storage, (result.state.storage.base, storage_base))
-            #                  (from, to)
-            if(result != None):
-                extra_subst.append((result.state.storage.base, storage_base))
-                storage_base = z3.substitute(result.state.storage.storage, extra_subst)
+            storage_base = z3.substitute(result.state.storage.storage, extra_subst)
 
         #UPDATE balance
         if initial_balance is not None:
@@ -1715,119 +1495,35 @@ class CombinedSymbolicResult(object):
         else:
             balance_base = None
         for result in self.results:
-            if(result != None):
-                if balance_base is not None: # if initial_balance is not None, then we need to adjust
-                    extra_subst.append((result.state.start_balance, balance_base))
-                    balance_base = z3.substitute(result.state.balance, extra_subst)
-                else: #if initial_balance IS None, thne take from result
-                    balance_base = result.state.balance
+            if balance_base is not None: # if initial_balance is not None, then we need to adjust
+                extra_subst.append((result.state.start_balance, balance_base))
+                balance_base = z3.substitute(result.state.balance, extra_subst)
+            else: #if initial_balance IS None, thne take from result
+                balance_base = result.state.balance
 
         #now...
-        extra_constraints = [] #was this used in the past to add that last constraint on ciritical addr?
-        #new Object that represents a state - but with the substitutions
-        # if (critical_addr):
-        #     self._states = [LazySubstituteState(r.state, extra_subst, critical_addr) for r in self.results]
-        # else:
-        #     self._states = [LazySubstituteState(r.state, extra_subst) for r in self.results]
-        # self.results[0].critical_addr
-        if(critical_addr == None):
-            critical_addr = z3.BitVec('COMBINE_%d' % 777, 256)
-        if (critical_op == None):
-            critical_op = 'NONE'
-        #to be used later in replay_exploit.py
-        self.critical_op = critical_op
-        self.critical_addr = critical_addr
+        extra_constraints = []
+        self._states = [LazySubstituteState(r.state, extra_subst) for r in self.results]
 
-        self._states = [LazySubstituteState(r.state, extra_subst, critical_addr, critical_op) for r in self.results if (r != None)]
-
-
-        #now transfer those substitutions into constrains -
-        #todo this happens before we get the extra_const from crititcal_addr in next step!! the order means we dont get that additional constraint from
-        # go over each results constrains(=expressions)
-        # and substitute any term in it that pre-exec-declared values (like result.state.storage.base)
-        # with the imported initial_X (like storage_base from above)
-        self._constraints = [z3.substitute(c, extra_subst) for r in self.results if (r != None) for c in
+        self._constraints = [z3.substitute(c, extra_subst) for r in self.results for c in
                              r.constraints] + extra_constraints
-
-        #R: rewrite for debugging:
-        # self._constraints = []
-        # for r in self.results:
-        #     for c in r.constraints:
-        #         #
-        #                    extra_subst = result.state.storage.base, storage_base
-        #         self._constraints.extend(z3.substitute(c, extra_subst))
-        # self._constraints.extend(extra_constraints)
-
         self._sha_constraints = {
             sha: z3.substitute(sha_value, extra_subst) if not isinstance(sha_value, SymRead) else sha_value for r in
-            self.results if (r != None) for sha, sha_value in r.sha_constraints.iteritems() }
+            self.results for sha, sha_value in r.sha_constraints.iteritems()}
 
-        self._idx_dict = {r.xid: i for i, r in enumerate(self.results) if (r != None)}
+        self._idx_dict = {r.xid: i for i, r in enumerate(self.results)}
 
     def prepend(self, result):
         self.calls += 1
         self.results = [result] + self.results
         self._reset()
 
-    def disjoint_prepend(self, result_triple):
-        # self.calls += 1
-        # for i in result:
-        #     if (i != None):
-        #         self.results = [i] + self.results
-        #         self._reset()
-
-        # self.calls += 1
-        #in reverse order to prepend tail, calle, head in order
-        for i, j, k in zip(result_triple[0::3], result_triple[1::3], result_triple[2::3]):
-            self.calls += 1
-            # if (k != None):
-            #     self.results = [k] + self.results
-            #     self._reset()
-            # if (j != None):
-            #     self.results = [j] + self.results
-            #     self._reset()
-            # if (i != None):
-            #     self.results = [i] + self.results
-            #     self._reset()
-            self.results = [k] + self.results
-            self._reset()
-            self.results = [j] + self.results
-            self._reset()
-            self.results = [i] + self.results
-            self._reset()
-
-        # self.calls += 1
-        # #in reverse order to prepend tail, calle, head in order
-        # for result in reversed(result_triple): #we want to limit to three elements of triple (avoid injecting prepend_addr if its present)
-        #     if (result != None):
-        #         self.results = [result] + self.results
-        #         self._reset()
-                #
-                # if (not result[1]): #it's NOT an address prepend!
-                #     self.results = [result] + self.results
-                #     self._reset()
-                #
-                # else: #we bumped into a head_r which is actually (head_r, term_triple) and term_triple = (t_head_r, t_callee_r, t_tail_r)
-                #     self.calls += 1
-                #     for addr_result in reversed(result[1]):  #going t_tail, t_callee, t_head
-                #         self.results = [addr_result] + self.results
-                #         self._reset()
-                #     #now add the head_r
-                #     self.results = [result] + self.results
-                #     self._reset()
-
-    # def no_addr_prepend_two(self, result_triple, callee_tupel):
-    #     # self.calls += 1
-    #     # for i in result:
-    #     #     if (i != None):
-    #     #         self.results = [i] + self.results
-    #     #         self._reset()
-    #     self.calls += 1
-    #     for result in reversed(result_triple): #we want to prepend(tail) then callee, then head
-    #         if (result != None and not isinstance(result, long)):
-    #             self.results = [result] + self.results
-    #             self._reset()
-
+    def disjoint_prepend(self, result):
+        self.calls += 1
+        for i in result:
+            if (i != None):
+                self.results = [i] + self.results
+                self._reset()
 
     def merge_prepend(self, result):
         # self.calls += 1

@@ -43,7 +43,17 @@ def model_to_calls(model, idx_dict):
         call_index = idx_dict[get_level(name)] #get_level returns number at the end of the symbolic vlaue
         call = calls[call_index]
         if name.startswith('CALLDATASIZE'):
-            payload_size = model[v].as_long()
+            # R:fix if size is odd - transaction size always even:
+            # payload_size = model[v].as_long()
+            # if model[v].as_long() % 2 == 0:
+            #     payload_size = model[v].as_long()
+            # else:
+            # if model[v].as_long() % 2 != 0:
+            #     payload_size = model[v].as_long() + 1
+            #     logging.warning('model_to_calls:had to resort to forcing even byte size return on %s', name)
+            #
+            m_v_long = model[v].as_long()
+            payload_size = m_v_long + 1 if m_v_long % 2 != 0 else m_v_long
             if 'payload' in call:
                 call['payload'] = call['payload'][:payload_size]
             else:
@@ -59,7 +69,16 @@ def model_to_calls(model, idx_dict):
         #R:
         elif name.startswith('calleeCALLDATASIZE'):
             logging.warning('model_to_calls:calleeCALLDATASIZE %s', name)
-            callee_payload_size = model[v].as_long()
+            #R:fix if size is odd - transaction size always even:
+            # if model[v].as_long() % 2 == 0:
+            #     callee_payload_size = model[v].as_long()
+            # else:
+            # if model[v].as_long() % 2 != 0:
+            #     callee_payload_size = model[v].as_long() + 1
+            #     logging.warning('model_to_calls:had to resort to forcing even byte size return on %s', name)
+            m_v_long = model[v].as_long()
+            callee_payload_size = m_v_long + 1 if m_v_long % 2 != 0 else m_v_long
+
             if 'callee_payload' in call:
                 call['callee_payload'] = call['callee_payload'][:callee_payload_size]
             else:
@@ -137,7 +156,8 @@ def check_model_and_resolve_inner(constraints, sha_constraints, second_try=False
     # it will be automatically flattened into propositional formula,
     # and solved using a SAT solver
     s = z3.SolverFor("QF_ABV")
-
+    #debugging
+    # constraints = constraints[:10] + constraints[11:]
     s.add(constraints)
     if s.check() != z3.sat:
         raise IntractablePath("CHECK","MODEL")
