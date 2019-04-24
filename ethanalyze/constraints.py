@@ -156,8 +156,10 @@ def check_model_and_resolve_inner(constraints, sha_constraints, second_try=False
     # it will be automatically flattened into propositional formula,
     # and solved using a SAT solver
     s = z3.SolverFor("QF_ABV")
+
     #debugging
-    # constraints = constraints[:10] + constraints[11:]
+    # constraints = constraints[:36]
+
     s.add(constraints)
     if s.check() != z3.sat:
         raise IntractablePath("CHECK","MODEL")

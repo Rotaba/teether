@@ -1668,6 +1668,30 @@ class SymbolicResult(object):
 
         return SymbolicResult(new_xid, new_state, new_constraints, new_sha_constraints, new_initial_path, new_path_left)
 
+    #R: regualr copy couldn't handle the triple structe and my idea to just reuse the import copy from copy failed when the MxM phase I would get the same
+    # prepend multiple times like (1,1) -> they would be using same xid instead of getting a net one form the cymbolicresult.copy() function like in the OG
+    # teEther
+    def disjoint_copy(self, new_xid):
+        # if "xid" not in run_symbolic.__dict__:
+        #     run_symbolic.xid = 0
+        # else:
+        #     run_symbolic.xid += 1
+        # new_xid = run_symbolic.xid
+
+        self.simplify()
+
+        new_constraints = [translate(c, new_xid) for c in self.constraints]
+        new_sha_constraints = {translate(sha, new_xid): translate(sha_value, new_xid) if not isinstance(sha_value,
+                                                                                                        SymRead) else sha_value.translate(
+            new_xid) for sha, sha_value in
+                               self.sha_constraints.items()}
+        new_state = self.state.copy(new_xid)
+        new_initial_path = self.initial_path
+        #R:
+        new_path_left = self.path_left
+
+        return SymbolicResult(new_xid, new_state, new_constraints, new_sha_constraints, new_initial_path, new_path_left)
+
     def may_read_from(self, other):
         return self.storage_info.may_read_from(other.storage_info)
 
