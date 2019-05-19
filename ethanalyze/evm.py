@@ -975,7 +975,6 @@ def run_symbolic(program, path, code=None, state=None, ctx=None, inclusive=False
                 state.critical_op = op
                 if (op == 'CALL'):
                     state.critical_amount = stk[-3]
-
             return SymbolicResult(xid, state, constraints, sha_constraints, initial_path, path)
 
         #2) premature return: if PC points to top op in path, then remove top op from path
@@ -991,7 +990,6 @@ def run_symbolic(program, path, code=None, state=None, ctx=None, inclusive=False
                     state.critical_op = op
                     if(op == 'CALL'):
                         state.critical_amount = stk[-3]
-
                 return SymbolicResult(xid, state, constraints, sha_constraints, initial_path, path)
 
         # Valid operations
@@ -1003,8 +1001,8 @@ def run_symbolic(program, path, code=None, state=None, ctx=None, inclusive=False
         elif opcode < 0x10:
             if op == 'STOP':
                 if path:
-                    # raise IntractablePath(state.trace, path)
-                    raise IntractablePath()
+                    # gitHUB fix, old: raise IntractablePath()
+                    raise IntractablePath(state.trace, path)
                 state.success = True
                 logging.info("%s: legit termination becasue of STOP" % evm_flag)
                 #prepend_adddr_stoage_state_chnge_check
@@ -1441,7 +1439,7 @@ def run_symbolic(program, path, code=None, state=None, ctx=None, inclusive=False
                 s0, s1, s2, s3, s4, s5, s6 = stk.pop(), stk.pop(), stk.pop(), stk.pop(), stk.pop(), stk.pop(), stk.pop()
                 constraints.append(z3.UGE(state.balance, s2))
                 state.balance -= s2
-                logging.info("%s: encountered a %s" % (evm_flag, op))
+                logging.info("%s: encountered a %s - do MUTE call from old teEther" % (evm_flag, op))
                 #taken from OG teEther - mute internal 'CALL'
                 if not concrete(s6):
                     raise SymbolicError("Symbolic return-buffer length in %s", op)
@@ -1449,11 +1447,12 @@ def run_symbolic(program, path, code=None, state=None, ctx=None, inclusive=False
                 ostart = s5 if concrete(s5) else z3.simplify(s5)
                 olen = s6 if concrete(s6) else z3.simplify(s6)
 
-                if concrete(s1) and s1 == 4:
-                    logging.info("Calling precompiled identity contract")
-                    istart = s3 if concrete(s3) else z3.simplify(s3)
-                    for i in xrange(olen):
-                        mem[ostart + i] = mem[istart + i]
+                if concrete(s1):
+                    if (s1 == 4):
+                        logging.info("Calling precompiled identity contract")
+                        istart = s3 if concrete(s3) else z3.simplify(s3)
+                        for i in xrange(olen):
+                            mem[ostart + i] = mem[istart + i]
                     else:
                         raise SymbolicError("Precompiled contract %d not implemented", s1)
                 else:
@@ -1461,15 +1460,14 @@ def run_symbolic(program, path, code=None, state=None, ctx=None, inclusive=False
                         mem[ostart + i] = z3.BitVec('EXT_%d_%d_%d' % (instruction_count, i, xid), 8)
 
                 stk.append(z3.BitVec('CALLRESULT_%d_%d' % (instruction_count, xid), 256))
-                # logging.info("!@#!@#!@#%s: encountered a %s - is this a mistake?\n" % (evm_flag, op))
-                # logging.info("!@#!@#!@#%s: encountered a %s - is this a mistake?\n" % (evm_flag, op))
+
             elif op == 'STATICCALL':
                 s0, s1, s3, s4, s5, s6 = stk.pop(), stk.pop(), stk.pop(), stk.pop(), stk.pop(), stk.pop()
                 s2 = 0
                 logging.info("!@#!@#!@#%s: encountered a %s - is this a mistake?\n" % (evm_flag, op))
                 logging.info("!@#!@#!@#%s: encountered a %s - is this a mistake?\n" % (evm_flag, op))
                 logging.info("!@#!@#!@#%s: encountered a %s - is this a mistake?\n" % (evm_flag, op))
-            if op in ('DELEGATECALL', 'CALLCODE'):
+            elif op in ('DELEGATECALL', 'CALLCODE'):
                 if op == 'CALLCODE': #whenever callcode is called; we save current CALLER into state and pass it down the execution line
                     s0, s1, s2, s3, s4, s5, s6 = stk.pop(), stk.pop(), stk.pop(), stk.pop(), stk.pop(), stk.pop(), stk.pop()
                     state.old_caller = ctx_or_symbolic('ADDRESS', ctx, xid)
@@ -1507,6 +1505,8 @@ def run_symbolic(program, path, code=None, state=None, ctx=None, inclusive=False
                     #     #continue exec, leave succsesful 1 on stack as return value
                     #     logging.info("!@#!@#!@#%s: encountered DELEGATECALL w/o a DC_flag - is this a mistake?" % evm_flag)
                     #     stk.append(1)
+                else:
+                    logging.info("!@#!@#!@#%s: encountered %s but no match?" % (evm_flag, op))
 
                 if (term_on_interCall):
                     logging.info("%s: premature halt on %s due to term_on_interCall flag" % (evm_flag, op))

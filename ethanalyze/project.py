@@ -122,24 +122,37 @@ class Project(object):
         else: #no flag; just boring path to requested op
             slices = [(ins,) for ins in instructions]
 
+        #debugg:
+        token = 0
+
         # explore the newly newly acquired BackwardSlices using the A*Explorer to generate paths
         # generate constrains for the Paths we found using symbolic exec;
         for path in exp.find(slices, avoid=external_data):
             #if slices is a tupel like in the "find_sstore" flag; it would llok for possible combinations where the SSTORE is on the path of RETURN/STOP
-            logging.debug('Path %s', ' -> '.join('%x' % p for p in path))
+            logging.info('Path on slice %s', ' -> '.join('%x' % p for p in path))
             try:
+                # debugg
+                if (token > 500):
+                    break
+                else:
+                    token += 1
+                    print token
                 # logging.info("g_c path %s" % path)
                 #use last inst_addr in path as index to get the corresponding inst from imap
                 ins = imap[path[-1]]
-                #becasue this is a loop; we can't simply pass a object as ref - on next loop it will be altered; so we pass a copy
+
+                # becasue this is a loop; we can't simply pass a object as ref - on next loop it will be altered; so we pass a copy
                 copy_of_i_s = copy(import_state)
-                yield ins, path, self.run_symbolic(path, inclusive, state=copy_of_i_s, term_on_interCall=term_on_interCall, storage_index=storage_index)
+                symResult = self.run_symbolic(path, inclusive, state=copy_of_i_s, term_on_interCall=term_on_interCall, storage_index=storage_index)
+                yield ins, path, symResult
+                # yield ins, path, self.run_symbolic(path, inclusive, state=copy_of_i_s, term_on_interCall=term_on_interCall, storage_index=storage_index)
             except IntractablePath as e:
                 bad_path = [i for i in e.trace if i in self.cfg._bb_at] + [e.remainingpath[0]]
                 dd = self.cfg.data_dependence(self.cfg._ins_at[e.trace[-1]])
                 if not any(i.name in ('MLOAD', 'SLOAD') for i in dd):
                     ddbbs = set(i.bb.start for i in dd)
-                    bad_path_start = next(j for j,i in enumerate(bad_path) if i in ddbbs)
+                    ##gitHUB fix, old: bad_path_start = next(j for j,i in enumerate(bad_path) if i in ddbbs)
+                    bad_path_start = next((j for j, i in enumerate(bad_path) if i in ddbbs), 0)
                     bad_path = bad_path[bad_path_start:]
                 logging.info("Bad path: %s" % (', '.join('%x' % i for i in bad_path)))
                 exp.add_to_blacklist(bad_path)
