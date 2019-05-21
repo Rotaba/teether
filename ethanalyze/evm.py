@@ -1439,7 +1439,7 @@ def run_symbolic(program, path, code=None, state=None, ctx=None, inclusive=False
                 s0, s1, s2, s3, s4, s5, s6 = stk.pop(), stk.pop(), stk.pop(), stk.pop(), stk.pop(), stk.pop(), stk.pop()
                 constraints.append(z3.UGE(state.balance, s2))
                 state.balance -= s2
-                logging.info("%s: encountered a %s - do MUTE call from old teEther" % (evm_flag, op))
+                logging.info("%s: encountered a %s - do STUB call from old teEther" % (evm_flag, op))
                 #taken from OG teEther - mute internal 'CALL'
                 if not concrete(s6):
                     raise SymbolicError("Symbolic return-buffer length in %s", op)
@@ -1448,13 +1448,22 @@ def run_symbolic(program, path, code=None, state=None, ctx=None, inclusive=False
                 olen = s6 if concrete(s6) else z3.simplify(s6)
 
                 if concrete(s1):
-                    if (s1 == 4):
-                        logging.info("Calling precompiled identity contract")
-                        istart = s3 if concrete(s3) else z3.simplify(s3)
-                        for i in xrange(olen):
-                            mem[ostart + i] = mem[istart + i]
+                    if s1 == 0: #create contract action
+                        constraints.append(z3.UGE(state.balance, s0))
+                        state.balance -= s0
+                        # stk.append(addr(z3.BitVec('EXT_CREATE_%d_%d' % (instruction_count, xid), 256)))
+                    elif (1 <= s1 <= 8): #precompile contracts
+                        if (s1 == 4):
+                            logging.info("Calling precompiled identity contract")
+                            istart = s3 if concrete(s3) else z3.simplify(s3)
+                            for i in xrange(olen):
+                                mem[ostart + i] = mem[istart + i]
+                        else:
+                            # pass
+                            raise SymbolicError("Precompiled contract %d not implemented", s1)
                     else:
-                        raise SymbolicError("Precompiled contract %d not implemented", s1)
+                        logging.info("Calling contract on concrete address %d", s1)
+                        # raise SymbolicError("invalid concrete value for addr of contract %d not implemented", s1)
                 else:
                     for i in xrange(olen):
                         mem[ostart + i] = z3.BitVec('EXT_%d_%d_%d' % (instruction_count, i, xid), 8)

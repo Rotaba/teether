@@ -131,21 +131,18 @@ class Project(object):
             #if slices is a tupel like in the "find_sstore" flag; it would llok for possible combinations where the SSTORE is on the path of RETURN/STOP
             logging.info('Path on slice %s', ' -> '.join('%x' % p for p in path))
             try:
-                # debugg
-                if (token > 500):
-                    break
-                else:
-                    token += 1
-                    print token
-                # logging.info("g_c path %s" % path)
-                #use last inst_addr in path as index to get the corresponding inst from imap
+                  #use last inst_addr in path as index to get the corresponding inst from imap
                 ins = imap[path[-1]]
-
                 # becasue this is a loop; we can't simply pass a object as ref - on next loop it will be altered; so we pass a copy
                 copy_of_i_s = copy(import_state)
-                symResult = self.run_symbolic(path, inclusive, state=copy_of_i_s, term_on_interCall=term_on_interCall, storage_index=storage_index)
-                yield ins, path, symResult
-                # yield ins, path, self.run_symbolic(path, inclusive, state=copy_of_i_s, term_on_interCall=term_on_interCall, storage_index=storage_index)
+                #debugg
+                # if (token > 500) and False:
+                #     break
+                # else:
+                #     token += 1
+                #     print token
+                # logging.info("g_c path %s" % path)
+                yield ins, path, self.run_symbolic(path, inclusive, state=copy_of_i_s, term_on_interCall=term_on_interCall, storage_index=storage_index)
             except IntractablePath as e:
                 bad_path = [i for i in e.trace if i in self.cfg._bb_at] + [e.remainingpath[0]]
                 dd = self.cfg.data_dependence(self.cfg._ins_at[e.trace[-1]])
