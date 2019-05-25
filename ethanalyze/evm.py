@@ -298,6 +298,8 @@ class LazySubstituteState(object):
         self.balance = z3.substitute(state.balance, substitutions)
         self.critical_address = z3.substitute(critical_addr, substitutions)
         self.critical_op = critical_op
+        #spec used in replay.py
+
         # if (state)
         # self.critical_address = z3.substitute(state.critical_address, substitutions)
 
@@ -1699,7 +1701,9 @@ class SymbolicResult(object):
         new_initial_path = self.initial_path
         #R:
         new_path_left = self.path_left
-
+        # ret = SymbolicResult(new_xid, new_state, new_constraints, new_sha_constraints, new_initial_path, new_path_left)
+        # ret.spec = self.spec
+        # return ret
         return SymbolicResult(new_xid, new_state, new_constraints, new_sha_constraints, new_initial_path, new_path_left)
 
     def may_read_from(self, other):
