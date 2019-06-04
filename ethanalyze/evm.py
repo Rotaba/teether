@@ -268,7 +268,7 @@ class SymbolicEVMState(AbstractEVMState):
         # self.shared_data = None
         self.input_value = None
         self.return_value = None
-        # self.xid = None
+        self.xid_label = xid
 
     def copy(self, new_xid):
         # Make a superficial copy of this state.
@@ -806,8 +806,10 @@ def run_symbolic(program, path, code=None, state=None, ctx=None, inclusive=False
         xid = run_symbolic.xid
     elif (state): #meaning there's a state import; we can reuse the xid
         # pass #dont increment xid; it's still the same call
-        name = str(state.balance)
-        xid = int(name[name.rfind('_') + 1:])
+        # name = str(state.balance)
+        # xid = int(name[name.rfind('_') + 1:])
+        name = state.xid_label
+        xid = name + 1
     else:
         # import random
         # run_symbolic.xid = int(random.random() * 1000)
