@@ -1345,7 +1345,7 @@ def run_symbolic(program, path, code=None, state=None, ctx=None, inclusive=False
             elif op == 'JUMPI':
                 s0, s1 = stk.pop(), stk.pop()
                 next_target = path[0]
-                if concrete(s1):
+                if concrete(s1): #cond
                     if s1:
                         if not concrete(s0):
                             raise SymbolicError('Symbolic jump target')
@@ -1356,7 +1356,7 @@ def run_symbolic(program, path, code=None, state=None, ctx=None, inclusive=False
                             raise vm_exception('BAD JUMPDEST')
                         continue
                     else:
-                        if concrete(s0):
+                        if concrete(s0): #dst
                             if state.pc + 1 != next_target and s0 == next_target:
                                 raise IntractablePath(state.trace, path)
                 else:
