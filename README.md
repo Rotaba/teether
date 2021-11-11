@@ -43,3 +43,34 @@ A bunch of scripts. Most notably:
     * `extract_contract_code.py`: Extract final contract code from constructor code (as given by `solc --bin`)
     * `plot_cfg.py`: Generate `.dot` graphs from bytecode
     * `sig.py`: Compute 4 byte signature from Solidity function signature
+
+#R:
+Most of the changes are in combined_exploit.call; nonetheless I'd say that it follows the same general logic
+I had to also adjust evm.py and some of the constraints.py stuff - but most of it for debugging purposes 
+
+exploit_all_addr.py will run combined_call_exploit.py on a range of addresses using the ...Xa = callee ...Xb = CALLER scheme
+```bash
+    python exploit_all_addr.py 0 15
+```
+I usually trun debugging off to see only the model and exploits at the end of the contract run
+it will also run with the "execute_exploit=True" that will send exploit transactions using the client   
+
+You can also run combined_call_exploit on specififc addr; 
+```bash
+    python combined_call_exploit.py 0x400000000000000000000000000000000000000b 0x3cc7c038f7eea1b70014b788b821d675b13b8760 +1
+```
+I've deactiavted the option to use a contract.code file for the time being - it's simply commented out
+
+Finally you can check the results using a terminal in teether-localhost with
+```bash
+    geth --exec 'loadScript("showBalance.js");getBalanceFrom("0x400000000000000000000000000000000000000b", 16)' attach http://127.0.0.1:8545
+```
+
+If on the otherhand you want to run it using the JSON project-exploit way;
+```bash
+    pyhon combined_call_exploit.py ../teether-test/eval/JSON/0_R.contract.code 0x3cc7c038f7eea1b70014b788b821d675b13b8760 +1
+```
+and then
+```bash
+    python replay_exploit.py ../teether-test/eval/JSON/0_R.contract.code.project.json ../teether-test/eval/JSON/0_R.contract.code.exploit.json 0x3cc7c038f7eea1b70014b788b821d675b13b8760 +1
+```

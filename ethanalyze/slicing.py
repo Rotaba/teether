@@ -134,6 +134,7 @@ def backward_slice(ins, taint_args=None, memory_info=None, initial_gas=10, must_
     else:
         memory_taint = Range()
 
+    #a couple of defs
     def initial_data(ins):
         stacksize = ins.ins
         slice = []
@@ -166,7 +167,31 @@ def backward_slice(ins, taint_args=None, memory_info=None, initial_gas=10, must_
                 filtered_slices.append(slice)
         return filtered_slices
 
-
+#As we require that
+# this argument is potentially attacker controlled, slices
+# are then filtered for those containing instructions whose
+# results can be directly (ORIGIN, CALLER, CALLVALUE,
+# CALLDATALOAD, CALLDATASIZE, CALLDATACOPY) or in-
+# directly (SLOAD, MLOAD) controlled by an attacker.
 def interesting_slices(instruction, args=None, reachable=False):
+
+    # Roman simplify generator used below
+    # ouf  of all the backward sliceS - check if any of them has a potentially_user_controlled instruction in them;
+    # if yes return the whole slice
+    # backward_slices = backward_slice(instruction, args, reachable=reachable)
+    # return_object = []
+    # for bs in backward_slices:
+    #      for instruction in bs:
+    #         if (instruction.name in potentially_user_controlled):
+    #             return_object.append(bs)
+    #
+    # return return_object
+
     return [bs for bs in backward_slice(instruction, args, reachable=reachable) if any(
-        ins.name in potentially_user_controlled for ins in bs)]
+        ins.name in potentially_user_controlled for ins in bs)] #pot_us_cont = 'ORIGIN', 'CALLER', 'CALLVALUE'.....
+
+def concrete_addr_slices(instruction, args=None, reachable=False, ):
+
+    #R: get slices if the addr is concrete and belongs to At. (TODO; look for arg to be the addr, not just PUSH20)
+    return [bs for bs in backward_slice(instruction, args, reachable=reachable) if any(
+        ins.name == 'PUSH20' for ins in bs)]

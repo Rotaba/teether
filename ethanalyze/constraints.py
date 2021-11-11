@@ -37,21 +37,62 @@ def model_to_calls(model, idx_dict):
     calls = defaultdict(dict)
     for v in model:
         name = v.name()
-        if name.split('_')[0] not in ('CALLDATASIZE', 'CALLDATA', 'CALLVALUE', 'CALLER'):
+
+        if name.split('_')[0] not in ('CALLDATASIZE', 'CALLDATA', 'CALLVALUE', 'CALLER', 'calleeCALLDATA', 'calleeCALLDATASIZE'):
             continue
-        call_index = idx_dict[get_level(name)]
+        call_index = idx_dict[get_level(name)] #get_level returns number at the end of the symbolic vlaue
         call = calls[call_index]
         if name.startswith('CALLDATASIZE'):
-            payload_size = model[v].as_long()
+            # R:fix if size is odd - transaction size always even:
+            # payload_size = model[v].as_long()
+            # if model[v].as_long() % 2 == 0:
+            #     payload_size = model[v].as_long()
+            # else:
+            # if model[v].as_long() % 2 != 0:
+            #     payload_size = model[v].as_long() + 1
+            #     logging.warning('model_to_calls:had to resort to forcing even byte size return on %s', name)
+            #
+            m_v_long = model[v].as_long()
+            payload_size = m_v_long + 1 if m_v_long % 2 != 0 else m_v_long
             if 'payload' in call:
                 call['payload'] = call['payload'][:payload_size]
             else:
                 call['payload_size'] = payload_size
         elif name.startswith('CALLDATA'):
+            # print 'model_to_calls:CALLDATA:constraints: ' + model[v].num_entries()
+            # print 'model_to_calls:CALLDATA:constraints: ' + model[v].__class__.__name__
+            # print model[v].__class__.__bases__
             call['payload'] = ''.join(map(chr, array_to_array(model[v])))
             if 'payload_size' in call:
                 call['payload'] = call['payload'][:payload_size]
                 del call['payload_size']
+        #R:
+        elif name.startswith('calleeCALLDATASIZE'):
+            logging.warning('model_to_calls:calleeCALLDATASIZE %s', name)
+            #R:fix if size is odd - transaction size always even:
+            # if model[v].as_long() % 2 == 0:
+            #     callee_payload_size = model[v].as_long()
+            # else:
+            # if model[v].as_long() % 2 != 0:
+            #     callee_payload_size = model[v].as_long() + 1
+            #     logging.warning('model_to_calls:had to resort to forcing even byte size return on %s', name)
+            m_v_long = model[v].as_long()
+            callee_payload_size = m_v_long + 1 if m_v_long % 2 != 0 else m_v_long
+
+            if 'callee_payload' in call:
+                call['callee_payload'] = call['callee_payload'][:callee_payload_size]
+            else:
+                call['callee_payload_size'] = callee_payload_size
+        elif name.startswith('calleeCALLDATA'):
+            logging.warning('model_to_calls:calleeCALLDATA %s', name)
+            # print 'model_to_calls:CalleeCALLDATA:constraints: ' + model[v].num_entries()
+            # print 'model_to_calls:CalleeCALLDATA:constraints: ' + model[v].__class__.__name__
+            # print model[v].__class__.__bases__
+            call['callee_payload'] = ''.join(map(chr, array_to_array(model[v])))
+            if 'callee_payload_size' in call:
+                call['callee_payload'] = call['callee_payload'][:callee_payload_size]
+                del call['callee_payload_size']
+        #J:
         elif name.startswith('CALLVALUE'):
             call['value'] = model[v].as_long()
         elif name.startswith('CALLER'):
@@ -111,13 +152,20 @@ def check_model_and_resolve(constraints, sha_constraints):
 def check_model_and_resolve_inner(constraints, sha_constraints, second_try=False):
     #logging.debug('-' * 32)
     extra_constraints = []
+    # If you represent your problem in a bit vector formula, e.g. QF_ABV,
+    # it will be automatically flattened into propositional formula,
+    # and solved using a SAT solver
     s = z3.SolverFor("QF_ABV")
+
+    #debugging
+    # constraints = constraints[:36]
+
     s.add(constraints)
     if s.check() != z3.sat:
         raise IntractablePath("CHECK","MODEL")
-    else:
+    else:# check is validand there are no sha3 constrains
         if not sha_constraints:
-            return s.model()
+            return s.model() #A Model contains interpretations (assignments) of constants and functions
 
     while True:
         ne_constraints = []

@@ -56,7 +56,7 @@ def get_memory_info(ins, code, memory_infos=None):
 
     if not read and not write:
         return None
-
+    #gen BS from the inputed mem_writes/reads instructions
     bs = backward_slice(ins, targets, memory_infos)
 
     read_range = None
@@ -89,8 +89,9 @@ def get_memory_info(ins, code, memory_infos=None):
 
 def resolve_all_memory(cfg, code):
     memory_infos = dict()
+    #ins are instructions; add to dequeue only mem_read/writes instructions
     resolve_later = deque(
-        ins for bb in cfg.bbs for ins in bb.ins if ins.name in memory_reads or ins.name in memory_writes)
+        ins for bb in cfg.bbs for ins in bb.ins if ( (ins.name in memory_reads) or (ins.name in memory_writes) )  )
     todo = deque()
     progress = True
     while todo or (progress and resolve_later):
@@ -100,6 +101,7 @@ def resolve_all_memory(cfg, code):
             progress = False
         ins = todo.popleft()
         try:
+            #gen MemoryInfo object from the writes/reads
             mi = get_memory_info(ins, code, memory_infos)
             if mi:
                 progress = True

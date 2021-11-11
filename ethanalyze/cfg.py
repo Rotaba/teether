@@ -15,18 +15,19 @@ def unique(l):
             yield i
         last = i
 
-
+#called by disass()
+#create an Inst obj that stores the metadata below
 class Instruction(object):
     def __init__(self, addr, op, arg=None):
-        opinfo = opcodes[op]
+        opinfo = opcodes[op] #get formatting info from opcode lib
         inslen = (op - 0x5f) + 1 if 0x60 <= op <= 0x7f else 1
         self.addr = addr
-        self.next_addr = self.addr + inslen
+        self.next_addr = self.addr + inslen #the next inst?
         self.op = op
         self.name = opinfo[0]
-        self.arg = arg
-        self.ins = opinfo[1]
-        self.outs = opinfo[2]
+        self.arg = arg #argument of inst
+        self.ins = opinfo[1] #num of arguments opcode pops off the stack
+        self.outs = opinfo[2] #num of arguments opcode pushes to the stack
         self.gas = opinfo[3]
         self.delta = self.outs - self.ins
         self.bb = None
@@ -47,7 +48,7 @@ class Instruction(object):
                 self.op == other.op and
                 self.arg == other.arg)
 
-
+#run from generate_BBs over instructions=ins
 class BB(object):
     def __init__(self, ins):
         self.ins = ins
@@ -55,14 +56,14 @@ class BB(object):
         self.stwrites = set()  # indices of stack-items that will be written by this BB (0 is the topmost item on stack)
         self.stdelta = 0
         for i in ins:
-            i.bb = self
-            if 0x80 <= i.op <= 0x8f:  # Special handling for DUP
+            i.bb = self #used later in dependecy edges check???
+            if 0x80 <= i.op <= 0x8f:  # Special handling for DUP(Duplicate Xth stack item)
                 ridx = i.op - 0x80 - self.stdelta
                 widx = -1 - self.stdelta
                 if ridx not in self.stwrites:
                     self.streads.add(ridx)
                 self.stwrites.add(widx)
-            elif 0x90 <= i.op <= 0x9f:  # Special handling for SWAP
+            elif 0x90 <= i.op <= 0x9f:  # Special handling for SWAP(Exchange 1st and Xnd stack items)
                 idx1 = i.op - 0x8f - self.stdelta
                 idx2 = - self.stdelta
                 if idx1 not in self.stwrites:
@@ -83,15 +84,15 @@ class BB(object):
         self.streads = {x for x in self.streads if x >= 0}
         self.stwrites = {x for x in self.stwrites if x >= 0}
         self.start = self.ins[0].addr
-        self.pred = set()
+        self.pred = set() #???
         self.succ = set()
         self.succ_addrs = set()
         self.pred_paths = defaultdict(set)
-        self.branch = self.ins[-1].op == 0x57
-        self.indirect_jump = self.ins[-1].op in (0x56, 0x57)
+        self.branch = self.ins[-1].op == 0x57 #JUMPI
+        self.indirect_jump = self.ins[-1].op in (0x56, 0x57) #JUMP, JUMPI
         self.ancestors = set()
         self.descendants = set()
-        # maintain a set of 'must_visit' contraints to limit
+        # maintain a set of 'must_visit' constraints to limit
         # backward-slices to only new slices after new egdes are added
         # initialliy, no constraint is given (= empty set)
         self.must_visit = [set()]
@@ -164,20 +165,23 @@ class BB(object):
                 todo.extend(s for s in bb.succ if s not in seen)
 
     def _find_jump_target(self):
-        if len(self.ins) >= 2 and 0x60 <= self.ins[-2].op <= 0x71:
-            self.must_visit = []
-            return int(hexlify(self.ins[-2].arg), 16)
+        #from get_succ_addrs: last inst is JUMP/JUMPI
+        if len(self.ins) >= 2 and 0x60 <= self.ins[-2].op <= 0x71: #if code length is bigger then 2 AND the inst beforelast is PUSH1..PUSH32
+            #trivial case
+            self.must_visit = [] #???
+            return int(hexlify(self.ins[-2].arg), 16) #return the addr pushed
         else:
             return None
 
     def get_succ_addrs_full(self, valid_jump_targets):
         from .slicing import slice_to_program, backward_slice
         from .evm import ExternalData, run
+
         new_succ_addrs = set()
         if self.indirect_jump and not self.jump_resolved:
             bs = backward_slice(self.ins[-1], [0], must_visits=self.must_visit)
             for b in bs:
-                if 0x60 <= b[-1].op <= 0x7f:
+                if 0x60 <= b[-1].op <= 0x7f: #PUSH1..PUSH32
                     succ_addr = int(hexlify(b[-1].arg), 16)
                 else:
                     p = slice_to_program(b)
@@ -198,21 +202,33 @@ class BB(object):
         self.must_visit = []
         return self.succ_addrs, new_succ_addrs
 
+    #figure indirect jumps
     def get_succ_addrs(self, valid_jump_targets):
-        if self.ins[-1].op in (0x56, 0x57):
-            jump_target = self._find_jump_target()
+        #While the jump target can be trivially inferred in some cases, such as ex: PUSH2 <addr>; JUMP ,
+        # logging.info(self.ins[-1].op)
+
+        #is it a indirect_jump?
+        if self.ins[-1].op in (0x56, 0x57): #if last inst is JUMP/JUMPI
+            #check if tirival case
+            jump_target = self._find_jump_target() #return the addr pushed
             if jump_target is not None:
+                #indeed trivial case - got addr
                 self.indirect_jump = False
                 if jump_target in valid_jump_targets:
+                    #we found the exact jumpdest
                     self.succ_addrs.add(jump_target)
             else:
+                #not so simple - it's an indirect jump
                 self.indirect_jump = True
-        else:
+        else: #last inst is NOT a jump
             self.must_visit = []
-        if self.ins[-1].op not in (0x00, 0x56, 0xf3, 0xfd, 0xfe, 0xff):
-            fallthrough = self.ins[-1].next_addr
-            if fallthrough:
+
+        #last inst is a fall through because it's NOT a normal "tail-inst" => Q: meaning its a JUMPI?
+        if self.ins[-1].op not in (0x00, 0x56, 0xf3, 0xfd, 0xfe, 0xff): #STOP,JUMP,RETURN,REVERT,INVALID,SELFDESTRUCT
+            fallthrough = self.ins[-1].next_addr #write FT addr
+            if fallthrough: #add the FT-addr to succ_addrs
                 self.succ_addrs.add(fallthrough)
+
         return self.succ_addrs
 
     def __str__(self):
@@ -237,7 +253,11 @@ class BB(object):
     def __cmp__(self, other):
         return cmp(self.start, other.start)
 
-
+#cfg class, takes "generate_BBs(self.code)"
+# Reconstructing a control flow graph from EVM byte-
+# code is a non-trivial task. This is due to the fact that the
+# EVM only provides control flow instructions with indi-
+# rect jumps.
 class CFG(object):
     def __init__(self, bbs, fix_xrefs=True, fix_only_easy_xrefs=False):
         self.bbs = sorted(bbs)
@@ -256,11 +276,13 @@ class CFG(object):
 
     def filter_ins(self, names, reachable=False):
         if isinstance(names, basestring):
-            names = [names]
+            names = [names] #names of instructions to filter
         if not reachable:
+            # ins = num of arguments opcode pops off the stack? or is it ins=instructions?
             return [ins for bb in self.bbs for ins in bb.ins if ins.name in names]
         else:
-            return [ins for bb in self.bbs for ins in bb.ins if ins.name in names and 0 in bb.ancestors|{bb.start}]
+            #return instructions which correspond to name AND are descendants of the root BB
+            return [ins for bb in self.bbs for ins in bb.ins if ( (ins.name in names) and (0 in bb.ancestors|{bb.start}) ) ]
 
     def _xrefs(self, fix_only_easy_xrefs=False):
         #logging.debug('Fixing Xrefs')
